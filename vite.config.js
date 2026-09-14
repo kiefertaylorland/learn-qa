@@ -6,9 +6,10 @@ import { defineConfig } from 'vite'
 export default defineConfig(({ mode }) => {
   const pages = mode === 'github-pages'
   const apiClient = fileURLToPath(new URL(pages ? './src/demoApi.js' : './src/liveApi.js', import.meta.url))
+  const pagesBase = process.env.GITHUB_PAGES_BASE || (process.env.GITHUB_REPOSITORY ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/` : '/')
 
   return {
-    base: pages ? '/learn-qa/' : '/',
+    base: pages ? pagesBase : '/',
     plugins: [react()],
     resolve: {
       alias: {

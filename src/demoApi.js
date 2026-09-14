@@ -12,6 +12,11 @@ const fallbackStorage = {
 }
 
 const ranges = { all: [1, Infinity], '1-5': [1, 5], '6-15': [6, 15], '16-30': [16, 30], '31+': [31, Infinity] }
+const modeTotals = Object.fromEntries(['bugs', 'tests'].map((mode) => [mode, challenges.filter((challenge) => challenge.mode === mode).length]))
+const challengeAnswers = new Map(challenges.map((challenge) => {
+  if (!Array.isArray(challenge.answers) || challenge.answers.length === 0) throw new Error(`Challenge ${challenge.id} is missing demo answers.`)
+  return [challenge.id, challenge.answers]
+}))
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -72,6 +77,10 @@ function publicUser(user) {
 function challengeSummary(challenge) {
   const { id, mode, title, level, difficulty, durationSeconds, description } = challenge
   return { id, mode, title, level, difficulty, durationSeconds, description }
+}
+
+function correctAnswersFor(challengeId) {
+  return challengeAnswers.get(challengeId)
 }
 
 export function createDemoApi(options = {}) {
@@ -153,9 +162,9 @@ export function createDemoApi(options = {}) {
         earned: store.achievements.some((entry) => entry.userId === userId && entry.achievementId === item.id),
       })),
       stats: { attempts: attemptRows.length, completed: completed.length, accuracy, weeklyXp },
-      modeProgress: Object.fromEntries(['bugs', 'tests'].map((mode) => [mode, {
+      modeProgress: Object.fromEntries(Object.keys(modeTotals).map((mode) => [mode, {
         completed: completed.filter((id) => challengeById.get(id).mode === mode).length,
-        total: 10,
+        total: modeTotals[mode],
       }])),
     }
   }
@@ -176,6 +185,7 @@ export function createDemoApi(options = {}) {
   }
 
   async function hashPassword(password) {
+    if (!cryptoApi?.subtle?.digest) throw new Error('This browser cannot create demo accounts. Try the guest demo or a newer browser.')
     const digest = await cryptoApi.subtle.digest('SHA-256', new TextEncoder().encode(password))
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
   }
@@ -422,9 +432,10 @@ export function createDemoApi(options = {}) {
 
       const time = now()
       const expired = time >= attempt.expiresAt
-      const correct = !expired && answers.length === challenge.answers.length && answers.every((answer) => challenge.answers.includes(answer))
-      const intersection = answers.filter((answer) => challenge.answers.includes(answer)).length
-      const accuracy = expired ? 0 : Math.round(100 * intersection / new Set([...answers, ...challenge.answers]).size)
+      const correctAnswers = correctAnswersFor(challenge.id)
+      const correct = !expired && answers.length === correctAnswers.length && answers.every((answer) => correctAnswers.includes(answer))
+      const intersection = answers.filter((answer) => correctAnswers.includes(answer)).length
+      const accuracy = expired ? 0 : Math.round(100 * intersection / new Set([...answers, ...correctAnswers]).size)
       const duration = Math.max(0, Math.min(time - attempt.startedAt, challenge.durationSeconds * 1000)) / 1000
 
       attempt.submittedAt = time
@@ -483,7 +494,7 @@ export function createDemoApi(options = {}) {
         accuracy,
         xpEarned,
         explanation: `${expired ? 'Time expired. No XP was awarded. ' : ''}${challenge.explanation}${rewardExplanation}${rolloverExplanation}`,
-        correctAnswers: clone(challenge.answers),
+        correctAnswers: clone(correctAnswers),
         state: state(store, user.id, time),
       }
       saveStore(store)

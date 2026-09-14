@@ -97,3 +97,19 @@ test('GitHub Pages demo mode does not blame rollover when the earlier daily bonu
 
   assert.doesNotMatch(result.explanation, /daily date changed/)
 })
+
+test('GitHub Pages demo mode returns a friendly error when Web Crypto is unavailable', async () => {
+  const demo = createDemoApi({
+    storage: memoryStorage(),
+    cryptoApi: {},
+    addEventListener: undefined,
+    removeEventListener: undefined,
+    setIntervalFn: () => 0,
+    clearIntervalFn: () => {},
+  })
+
+  await assert.rejects(
+    () => demo.api('/auth/register', { name: 'Ada QA', email: 'ada@example.com', password: 'Long test passphrase 42!' }),
+    /guest demo or a newer browser/,
+  )
+})
