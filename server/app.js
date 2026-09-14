@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { challenges, challengeById, achievementDefinitions } from './content.js';
@@ -86,6 +86,14 @@ export function createApp({
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
   const cookieName = production ? '__Host-qa_session' : 'qa_session';
   const configuredOrigin = origin ? new URL(origin).origin : null;
+  let appShell = null;
+  if (production) {
+    try {
+      appShell = readFileSync(path.join(distDir, 'index.html'), 'utf8');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
   const limits = new Map();
   let hashesInFlight = 0;
 
@@ -458,8 +466,9 @@ export function createApp({
       try {
         limit(`app:${clientAddress(req)}`, 120, 60_000);
         if (path.extname(req.path) || req.path.split('/').some((segment) => segment.startsWith('.'))) return next(fail(404, 'File not found.'));
+        if (appShell === null) return next(fail(404, 'File not found.'));
         res.set('Cache-Control', 'no-cache');
-        res.sendFile(path.join(distDir, 'index.html'), (error) => { if (error) next(error); });
+        res.type('html').send(appShell);
       } catch (error) { next(error); }
     });
   }
