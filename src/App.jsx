@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, isDemoMode, subscribeToLeaderboard } from 'virtual:qa-api'
 import './App.css'
 
 const EMPTY = {
@@ -59,15 +60,6 @@ function readLocal(key, fallback) {
 }
 function writeLocal(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* Storage is optional in private browsing. */ }
-}
-async function api(path, body) {
-  const response = await fetch(`/api${path}`, {
-    credentials: 'same-origin',
-    ...(body !== undefined ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.error || 'Something went wrong. Please try again.')
-  return data
 }
 function Modal({ title, children, onClose }) {
   const ref = useRef()
@@ -182,10 +174,7 @@ export default function App() {
   }, [refresh])
   useEffect(() => {
     refreshBoard()
-    const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/live`)
-    socket.onmessage = () => refreshBoard()
-    const poll = setInterval(refreshBoard, 30000)
-    return () => { socket.close(); clearInterval(poll) }
+    return subscribeToLeaderboard(refreshBoard)
   }, [refreshBoard])
   useEffect(() => {
     if (active && !result) {
@@ -300,6 +289,7 @@ export default function App() {
           </div>
         </section> : <>
           <div className="page-heading"><div><div className="eyebrow">{page === 'dashboard' ? `LET’S MAKE PROGRESS, ${profile.name.toUpperCase()}` : 'THE QA QUEST'}</div><h1>{headings[page]}</h1><p>{page === 'dashboard' ? 'Sharpen your instincts. Build your skills. Make quality your superpower.' : page === 'challenges' ? 'Choose a challenge and learn something you can use in the real world.' : page === 'leaderboard' ? 'Learn together. Level up together. Rankings reset every Monday, UTC.' : page === 'achievements' ? 'Keep showing up. Your next achievement is closer than you think.' : 'A little knowledge goes a long way. Take it into your next challenge.'}</p></div>{page === 'dashboard' && <span className="edition-tag"><span /> THE LEARNING NEVER STOPS</span>}</div>
+          {isDemoMode && <div className="learning-note"><Icon name="spark" /><p>Live demo mode runs entirely in your browser. Progress and accounts stay on this device, and the leaderboard reflects local demo activity.</p></div>}
 
           {page === 'dashboard' && <>
             <div className="dashboard-grid">

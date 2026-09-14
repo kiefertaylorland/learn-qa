@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node --experimental-sqlite server/index.js",
     "test": "node --experimental-sqlite --test",
     "build": "vite build",
+    "build:pages": "vite build --mode github-pages",
     "lint": "oxlint",
     "preview": "vite preview"
   },

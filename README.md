@@ -2,6 +2,12 @@
 
 Learn QA engineering by hunting bugs and designing test coverage. This repository implements the **Phase 1 MVP** from [PRD.md](./PRD.md), with a React interface, an Express API, and a persistent SQLite database.
 
+## Live demo
+
+GitHub Pages publishes a browser-only demo at **https://kiefertaylorland.github.io/learn-qa/**.
+
+The Pages build uses local browser storage instead of the Express API, so progress, accounts, and leaderboard activity stay on the device running the demo.
+
 ## Run locally
 
 Requires **Node.js 22.13+** and npm. SQLite uses Node’s built-in `node:sqlite` module; an experimental warning is expected on Node 22.
