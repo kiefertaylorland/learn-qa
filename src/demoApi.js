@@ -474,8 +474,9 @@ export function createDemoApi(options = {}) {
 
       const rewardExplanation = !correct ? '' : xpEarned === 0 ? ' Practice clear: no repeat-clear XP is awarded.'
         : bonus ? ' Includes the once-per-UTC-day +150 daily bonus.' : ' First-clear XP awarded.'
-      const rolloverExplanation = correct && attempt.dailyDate && attempt.dailyDate !== dayKey(time)
-        ? ' The daily date changed before submission, so no daily bonus was awarded.' : ''
+      const missedRolloverBonus = correct && attempt.dailyDate && attempt.dailyDate !== dayKey(time)
+        && !store.dailyRewards.some((entry) => entry.userId === user.id && entry.date === attempt.dailyDate)
+      const rolloverExplanation = missedRolloverBonus ? ' The daily date changed before submission, so no daily bonus was awarded.' : ''
 
       attempt.result = {
         correct,

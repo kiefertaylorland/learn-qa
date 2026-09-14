@@ -69,3 +69,31 @@ test('GitHub Pages demo mode keeps registered accounts and can sign back in loca
   assert.deepEqual(login, { user: { id: 'user-1', name: 'Ada QA' } })
   assert.deepEqual(await demo.api('/me'), login)
 })
+
+test('GitHub Pages demo mode does not blame rollover when the earlier daily bonus was already claimed', async () => {
+  let time = Date.parse('2026-01-05T12:00:00Z')
+  let ids = 0
+  const demo = createDemoApi({
+    storage: memoryStorage(),
+    now: () => time,
+    randomUUID: () => `day-${++ids}`,
+    addEventListener: undefined,
+    removeEventListener: undefined,
+    setIntervalFn: () => 0,
+    clearIntervalFn: () => {},
+  })
+
+  await demo.api('/auth/guest', {})
+  const daily = await demo.api('/daily')
+
+  let attempt = await demo.api('/attempts', { challengeId: daily.challengeId, daily: true })
+  time += 1000
+  await demo.api(`/attempts/${attempt.attemptId}/submit`, { answers: challengeById.get(daily.challengeId).answers })
+
+  time = Date.parse('2026-01-05T23:59:30Z')
+  attempt = await demo.api('/attempts', { challengeId: daily.challengeId, daily: true })
+  time = Date.parse('2026-01-06T00:01:00Z')
+  const result = await demo.api(`/attempts/${attempt.attemptId}/submit`, { answers: challengeById.get(daily.challengeId).answers })
+
+  assert.doesNotMatch(result.explanation, /daily date changed/)
+})
