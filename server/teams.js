@@ -117,6 +117,7 @@ export function mountTeams(ctx) {
     res.json(view(req.params.id, req.user.id));
   });
   app.post('/api/teams/:id/members', requireAuth, (req, res) => {
+    limit(`team-members:${req.user.id}`, 30, 86400000);
     const { action, code: targetCode } = body(req, ['action', 'code']);
     const team = authorize(req.params.id, req.user.id, action !== 'leave');
     if (!['leave', 'remove', 'transfer'].includes(action))
