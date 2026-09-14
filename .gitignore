@@ -26,3 +26,9 @@ data/
 *.njsproj
 *.sln
 *.sw?
+
+# Local browser verification artifacts
+.playwright-cli/
+output/playwright/
+
+dist-pages/

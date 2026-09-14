@@ -1,0 +1,205 @@
+.roadmap-stack {
+  display: grid;
+  gap: 24px;
+}
+.roadmap-panel {
+  padding: 26px;
+}
+.roadmap-panel h2 {
+  margin-bottom: 14px;
+}
+.roadmap-panel p {
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.roadmap-cards,
+.skill-tree {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.roadmap-cards > article,
+.skill-tree > article,
+.tournament {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.roadmap-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+.roadmap-form {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+  max-width: 520px;
+}
+.roadmap-form label,
+.roadmap-panel > label {
+  display: grid;
+  gap: 8px;
+}
+.roadmap-panel input:not([type='checkbox']) {
+  min-width: 0;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #151a15;
+  color: var(--text);
+}
+.portfolio-option {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  line-height: 1.6;
+}
+.portfolio-option input {
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.share-code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.roadmap-panel .text-button {
+  margin: 0 8px;
+}
+.skill-tree progress {
+  width: 100%;
+  accent-color: var(--green);
+}
+.skill-tree h3 {
+  margin: 14px 0;
+}
+.measurements {
+  overflow-x: auto;
+  margin: 24px 0;
+}
+.measurements table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.measurements td,
+.measurements th {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.metric-bar {
+  display: block;
+  width: 100px;
+  background: #343d33;
+  height: 12px;
+  border-radius: 3px;
+}
+.metric-bar i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+}
+.color-swatch {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #baf478;
+}
+.color-swatch.ocean {
+  background: #8be5ee;
+}
+.color-swatch.violet {
+  background: #d7b5ff;
+}
+.color-swatch.sunrise {
+  background: #ffda83;
+}
+.app-shell[data-theme='ocean'] {
+  --green: #8be5ee;
+}
+.app-shell[data-theme='violet'] {
+  --green: #d7b5ff;
+}
+.app-shell[data-theme='sunrise'] {
+  --green: #ffda83;
+}
+.match-question {
+  margin: 24px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.match-question legend {
+  padding: 0 8px;
+  line-height: 1.7;
+}
+.public-portfolio {
+  max-width: 960px;
+  padding: 40px 20px;
+}
+.sidebar {
+  overflow-y: auto;
+}
+.sidebar-bottom {
+  margin-top: 24px;
+}
+.challenge-toolbar .segmented {
+  flex-wrap: wrap;
+}
+.segmented {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.video-library video {
+  width: 100%;
+  border-radius: 8px;
+  background: #111;
+}
+.video-library summary {
+  cursor: pointer;
+  margin: 12px 0;
+}
+.video-library p {
+  line-height: 1.7;
+}
+@media (max-width: 600px) {
+  .roadmap-panel {
+    padding: 18px;
+  }
+  .roadmap-cards,
+  .skill-tree {
+    grid-template-columns: 1fr;
+  }
+  .measurements th,
+  .measurements td {
+    padding: 6px;
+  }
+  .metric-bar {
+    width: 60px;
+  }
+  .roadmap-actions .button {
+    width: 100%;
+  }
+  .challenge-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .segmented button {
+    flex: 1;
+  }
+  .share-code {
+    display: block;
+  }
+  .roadmap-panel .text-button {
+    min-height: 44px;
+  }
+}

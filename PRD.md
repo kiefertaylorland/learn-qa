@@ -184,31 +184,33 @@ Learn production-ready QA skills through interactive gameplay rather than dry do
 ## 7. Roadmap
 
 ### **MVP (Phase 1)**
-- [ ] Bug Hunting Mode (10 levels)
-- [ ] Test Case Arena (10 levels)
-- [ ] Basic leaderboard
-- [ ] Achievement system (basic)
-- [ ] Daily challenge
+- [x] Bug Hunting Mode (10 levels)
+- [x] Test Case Arena (10 levels)
+- [x] Basic leaderboard
+- [x] Achievement system (basic)
+- [x] Daily challenge
 
 ### **Phase 2**
-- [ ] Regression Roulette (15 levels)
-- [ ] Documentation Detective mode
-- [ ] Skill trees & progression path visualization
-- [ ] Social features (friend leaderboards, share achievements)
+- [x] Regression Roulette (15 levels)
+- [x] Documentation Detective mode
+- [x] Skill trees & progression path visualization
+- [x] Social features (friend leaderboards, share achievements)
 
 ### **Phase 3**
-- [ ] Performance Patrol mode
-- [ ] Seasonal content system
-- [ ] Video tutorials library
-- [ ] Premium cosmetics shop
+- [x] Performance Patrol mode
+- [x] Seasonal content system
+- [x] Video tutorials library
+- [x] Cosmetics shop (earned credits; approved scope)
 
 ### **Phase 4+**
-- [ ] Mobile app
-- [ ] Multiplayer head-to-head challenges
-- [ ] Corporate team accounts & tournaments
-- [ ] Integration with portfolio sites
+- [x] Mobile-installable web app (approved scope)
+- [x] Multiplayer head-to-head challenges
+- [x] Corporate team accounts & tournaments
+- [x] Integration with portfolio sites
 
 ---
+
+Implementation details and demo limitations are documented in [README.md](./README.md). Native app-store packages and paid commerce are excluded by the approved scope.
 
 ## 8. Competitive Advantages
 

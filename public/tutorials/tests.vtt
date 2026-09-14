@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:10.000
+Set the starting state. Precondition: a signed-in shopper has one available item in the cart.
+
+00:00:10.000 --> 00:00:20.000
+Describe actions and outcomes. Apply a valid coupon and check out. Expect one order with the correct total.
+
+00:00:20.000 --> 00:00:30.000
+Expand your coverage. Try invalid coupons, empty carts, and a lost payment response.
