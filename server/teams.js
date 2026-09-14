@@ -149,8 +149,8 @@ export function mountTeams(ctx) {
     res.json({ ok: true });
   });
   app.post('/api/teams/:id/tournaments', requireAuth, (req, res) => {
-    authorize(req.params.id, req.user.id, true);
     limit(`tournament:${req.user.id}`, 10, 86400000);
+    authorize(req.params.id, req.user.id, true);
     const { name: title, durationHours } = body(req, ['name', 'durationHours']);
     if (
       !Number.isInteger(durationHours) ||
