@@ -197,6 +197,22 @@ test('login failures are generic and per-account brute-force attempts are bounde
   assert.equal((await player.post('/api/auth/login', { email: 'ada@example.com', password: PASSWORD })).status, 200);
 });
 
+test('registration attempts are rate-limited per normalized email and reset after the window', async (t) => {
+  const api = await fixture(t);
+  const emails = ['ADA@example.com', 'ada@example.com', 'Ada@example.com', 'ADA@example.com', 'ada@example.com', 'Ada@example.com'];
+  for (const [index, email] of emails.entries()) {
+    const response = await api.client().post('/api/auth/register', { name: `Ada ${index}`, email, password: PASSWORD });
+    assert.equal(response.status, 201);
+    api.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(response.data.user.id);
+    api.db.prepare('DELETE FROM users WHERE id = ?').run(response.data.user.id);
+  }
+  const limited = await api.client().post('/api/auth/register', { name: 'Ada 6', email: 'aDa@example.com', password: PASSWORD });
+  assert.equal(limited.status, 429);
+  assert.ok(limited.headers.get('retry-after'));
+  api.clock.time += 15 * 60_000;
+  assert.equal((await api.client().post('/api/auth/register', { name: 'Ada 7', email: 'AdA@example.com', password: PASSWORD })).status, 201);
+});
+
 test('only one live attempt is allowed; attempts and answers are user-scoped and validated', async (t) => {
   const api = await fixture(t);
   const player = api.client();
