@@ -381,7 +381,7 @@ export function createDemoApi(options = {}) {
         throw error
       }
       const pending = store.attempts
-        .filter((entry) => entry.userId === user.id && !entry.result && entry.expiresAt > time)
+        .filter((entry) => entry.userId === user.id && !entry.submittedAt && entry.expiresAt > time)
         .sort((a, b) => b.startedAt - a.startedAt)[0]
       if (pending) {
         if (pending.challengeId === challengeId && pending.dailyDate === (daily ? dayKey(time) : null)) return attemptResponse(pending)
