@@ -274,6 +274,7 @@ export function createApp({
   app.post('/api/auth/register', async (req, res) => {
     authLimit(req);
     const { name, email, password } = credentials(req, true);
+    limit(`register:${hash(email)}`, 6, 15 * 60_000);
     if (req.user?.email) throw fail(409, 'Sign out before creating another account.');
     const salt = randomBytes(16).toString('hex');
     const passwordHash = (await passwordKey(password, salt)).toString('hex');
