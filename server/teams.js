@@ -116,38 +116,45 @@ export function mountTeams(ctx) {
     );
     res.json(view(req.params.id, req.user.id));
   });
-  app.post('/api/teams/:id/members', requireAuth, (req, res) => {
-    limit(`team-members:${req.user.id}`, 30, 86400000);
-    const { action, code: targetCode } = body(req, ['action', 'code']);
-    const team = authorize(req.params.id, req.user.id, action !== 'leave');
-    if (!['leave', 'remove', 'transfer'].includes(action))
-      throw fail(400, 'Choose a valid membership action.');
-    const target = action === 'leave' ? req.user : userByCode(targetCode);
-    if (
-      !target ||
-      !get(
-        'SELECT 1 FROM team_members WHERE team_id=? AND user_id=?',
-        team.id,
-        target.id,
+  app.post(
+    '/api/teams/:id/members',
+    requireAuth,
+    (req, res, next) => {
+      limit(`team-members:${req.user.id}`, 30, 86400000);
+      next();
+    },
+    (req, res) => {
+      const { action, code: targetCode } = body(req, ['action', 'code']);
+      const team = authorize(req.params.id, req.user.id, action !== 'leave');
+      if (!['leave', 'remove', 'transfer'].includes(action))
+        throw fail(400, 'Choose a valid membership action.');
+      const target = action === 'leave' ? req.user : userByCode(targetCode);
+      if (
+        !target ||
+        !get(
+          'SELECT 1 FROM team_members WHERE team_id=? AND user_id=?',
+          team.id,
+          target.id,
+        )
       )
-    )
-      throw fail(404, 'Member not found.');
-    if (action === 'transfer')
-      run('UPDATE teams SET owner=? WHERE id=?', target.id, team.id);
-    else {
-      if (target.id === team.owner)
-        throw fail(
-          400,
-          'Transfer ownership before leaving or removing the owner.',
+        throw fail(404, 'Member not found.');
+      if (action === 'transfer')
+        run('UPDATE teams SET owner=? WHERE id=?', target.id, team.id);
+      else {
+        if (target.id === team.owner)
+          throw fail(
+            400,
+            'Transfer ownership before leaving or removing the owner.',
+          );
+        run(
+          'DELETE FROM team_members WHERE team_id=? AND user_id=?',
+          team.id,
+          target.id,
         );
-      run(
-        'DELETE FROM team_members WHERE team_id=? AND user_id=?',
-        team.id,
-        target.id,
-      );
-    }
-    res.json({ ok: true });
-  });
+      }
+      res.json({ ok: true });
+    },
+  );
   app.post('/api/teams/:id/tournaments', requireAuth, (req, res) => {
     limit(`tournament:${req.user.id}`, 10, 86400000);
     authorize(req.params.id, req.user.id, true);
