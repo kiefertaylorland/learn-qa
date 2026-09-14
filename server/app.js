@@ -1,4 +1,5 @@
 import express from 'express';
+import proxyaddr from 'proxy-addr';
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
@@ -80,7 +81,7 @@ export function createApp({
   const db = new DatabaseSync(databasePath);
   initialize(db);
   const app = express();
-  app.set('trust proxy', true);
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
   const server = createServer(app);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
   const cookieName = production ? '__Host-qa_session' : 'qa_session';
@@ -175,9 +176,7 @@ export function createApp({
     limit(`auth:${clientAddress(req)}`, 20, 15 * 60_000);
   }
   function clientAddress(req) {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',')[0].trim();
-    return req.socket.remoteAddress;
+    return proxyaddr(req, app.get('trust proxy fn'));
   }
   function completedIds(userId) {
     return all('SELECT challenge_id FROM completions WHERE user_id = ? ORDER BY completed_at, challenge_id', userId)
