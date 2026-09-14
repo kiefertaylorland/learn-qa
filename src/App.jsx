@@ -218,7 +218,7 @@ export default function App() {
   }
   async function logout() {
     setBusy(true)
-    try { await api('/auth/logout', {}); setUser(null); setState(EMPTY); setChallenges([]); setDaily(null); navigate('dashboard'); refreshBoard() } catch (err) { setError(err.message) } finally { setBusy(false) }
+    try { await api('/auth/logout', {}); setUser(null); setState(EMPTY); setChallenges([]); setDaily(null); setActive(null); setResult(null); setPage('dashboard'); setMobileNav(false); setError(''); refreshBoard() } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   async function start(challenge, isDaily = false, skipTutorial = false) {
     if (!user) { setModal('auth'); return }
@@ -269,7 +269,7 @@ export default function App() {
       <a href="#dashboard" className="brand" onClick={(event) => { event.preventDefault(); navigate('dashboard') }}><span className="brand-mark"><Icon name="code" size={23} /></span>qa<span>quest</span><span className="brand-dot">.</span></a>
       <div className="workspace-label">YOUR ADVENTURE</div>
       <nav>{[['dashboard', 'grid', 'Overview'], ['challenges', 'code', 'Challenges'], ['learn', 'book', 'Learning hub'], ['leaderboard', 'trophy', 'Leaderboard'], ['achievements', 'badge', 'Achievements']].map(([id, icon, label]) =>
-        <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => id === 'challenges' && !user ? explore() : navigate(id)} disabled={busy}><Icon name={icon} />{label}{id === 'challenges' && <span className="nav-count">20</span>}</button>)}</nav>
+        <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => id === 'challenges' && !user ? explore() : navigate(id)} disabled={busy || initializing}><Icon name={icon} />{label}{id === 'challenges' && <span className="nav-count">20</span>}</button>)}</nav>
       <div className="sidebar-bottom">
         <div className="sidebar-tip"><span className="tiny-label"><Icon name="spark" size={15} /> A LITTLE BETTER, EVERY DAY</span><p>Great QA engineers aren’t born.<br />They’re built, one bug at a time.</p><button onClick={() => { setQuery(''); setModal('glossary') }}>Explore the glossary <Icon name="arrow" size={15} /></button></div>
         <div className="sidebar-profile"><span className="avatar">{profile.name.slice(0, 2).toUpperCase()}</span><div><strong>{profile.name}</strong><span>{user ? profile.isGuest ? 'Guest explorer' : 'QA adventurer' : 'Your adventure awaits'}</span></div><button className="icon-button" aria-label={user ? 'Account settings' : 'Sign in'} onClick={() => setModal(user && !profile.isGuest ? 'account' : 'auth')}><Icon name="user" size={18} /></button></div>

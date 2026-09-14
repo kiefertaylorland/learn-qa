@@ -80,6 +80,7 @@ export function createApp({
   const db = new DatabaseSync(databasePath);
   initialize(db);
   const app = express();
+  app.set('trust proxy', true);
   const server = createServer(app);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
   const cookieName = production ? '__Host-qa_session' : 'qa_session';
@@ -171,7 +172,12 @@ export function createApp({
     }
   }
   function authLimit(req) {
-    limit(`auth:${req.socket.remoteAddress}`, 20, 15 * 60_000);
+    limit(`auth:${clientAddress(req)}`, 20, 15 * 60_000);
+  }
+  function clientAddress(req) {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',')[0].trim();
+    return req.socket.remoteAddress;
   }
   function completedIds(userId) {
     return all('SELECT challenge_id FROM completions WHERE user_id = ? ORDER BY completed_at, challenge_id', userId)
@@ -236,7 +242,7 @@ export function createApp({
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     try {
-      limit(`api:${req.socket.remoteAddress}`, 240, 60_000);
+      limit(`api:${clientAddress(req)}`, 240, 60_000);
       if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
         if (!matchesOrigin(req) || req.headers['sec-fetch-site'] === 'cross-site') {
           throw fail(403, 'Request origin is not allowed.');
@@ -257,7 +263,7 @@ export function createApp({
     body(req, []);
     if (req.user) return res.json({ user: publicUser(req.user) });
     authLimit(req);
-    limit(`guest:${req.socket.remoteAddress}`, 8, 15 * 60_000);
+    limit(`guest:${clientAddress(req)}`, 8, 15 * 60_000);
     const id = randomUUID();
     const name = `Explorer ${randomBytes(3).toString('hex')}`;
     transaction(() => {
@@ -471,15 +477,16 @@ export function createApp({
       return;
     }
     try {
-      limit(`ws:${req.socket.remoteAddress}`, 30, 60_000);
-      const sameIp = [...wss.clients].filter((client) => client.remoteIp === req.socket.remoteAddress).length;
+      const ip = clientAddress(req);
+      limit(`ws:${ip}`, 30, 60_000);
+      const sameIp = [...wss.clients].filter((client) => client.remoteIp === ip).length;
       if (sameIp >= 5 || wss.clients.size >= 1000) throw fail(429, 'Too many connections.');
     } catch {
       socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
       return;
     }
     wss.handleUpgrade(req, socket, head, (client) => {
-      client.remoteIp = req.socket.remoteAddress;
+      client.remoteIp = clientAddress(req);
       client.alive = true;
       client.on('pong', () => { client.alive = true; });
       client.on('error', () => client.terminate());
