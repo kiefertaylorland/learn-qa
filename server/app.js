@@ -1,4 +1,8 @@
 import express from 'express';
+import { modes, isUnlocked, seasonFor } from '../shared/progression.js';
+import { seasonalChallenges } from './seasonContent.js';
+import { mountCommunity } from './community.js';
+import { createRewards } from './rewards.js';
 import proxyaddr from 'proxy-addr';
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,6 +13,7 @@ import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { challenges, challengeById, achievementDefinitions } from './content.js';
 
+const playableById = new Map([...challengeById, ...seasonalChallenges.map(c=>[c.id,c])]);
 const deriveKey = promisify(scrypt);
 const DAY = 86_400_000;
 const SESSION_LIFETIME = 30 * DAY;
@@ -191,8 +196,7 @@ export function createApp({
       .map((row) => row.challenge_id);
   }
   function unlocked(challenge, completed) {
-    return challenges.filter((item) => item.mode === challenge.mode && item.level < challenge.level)
-      .every((item) => completed.includes(item.id));
+    return isUnlocked(challenge, completed);
   }
   function state(userId, time = now()) {
     const user = get('SELECT * FROM users WHERE id = ?', userId);
@@ -209,19 +213,19 @@ export function createApp({
       completed,
       achievements: achievementDefinitions.map((item) => ({ ...item, earned: earned.includes(item.id) })),
       stats: { attempts: stats.attempts, completed: completed.length, accuracy: Math.round(stats.accuracy), weeklyXp: weekly.xp },
-      modeProgress: Object.fromEntries(['bugs', 'tests'].map((mode) => [mode, { completed: completed.filter((id) => challengeById.get(id).mode === mode).length, total: 10 }])),
+      modeProgress: Object.fromEntries(Object.entries(modes).map(([mode, info]) => [mode, { completed: completed.filter((id) => challengeById.get(id)?.mode === mode).length, total: info.total }])),
     };
   }
   function dailyChallenge(time = now()) {
     return challenges[Math.floor(time / DAY) % challenges.length];
   }
   function attemptResponse(attempt) {
-    const item = challengeById.get(attempt.challenge_id);
+    const item = playableById.get(attempt.challenge_id);
     // Explicit field selection keeps grading keys and explanations off the wire.
-    const { id, mode, title, level, prompt, code, options, durationSeconds } = item;
+    const { id, mode, title, level, prompt, code, metrics, options, durationSeconds } = item;
     return {
       attemptId: attempt.id,
-      challenge: { id, mode, title, level, prompt, ...(code ? { code } : {}), options, durationSeconds },
+      challenge: { id, mode, title, level, prompt, ...(code ? { code } : {}), ...(metrics ? {metrics} : {}), options, durationSeconds },
       startedAt: iso(attempt.started_at), expiresAt: iso(attempt.expires_at),
     };
   }
@@ -264,6 +268,10 @@ export function createApp({
     } catch (error) { next(error); }
   });
   app.use('/api', express.json({ limit: '8kb', strict: true }));
+
+  mountCommunity({app,db,requireAuth,body,now,limit});
+  const rewards = createRewards({db,app,requireAuth,body,completedIds,now});
+  app.get('/api/seasons/challenges',requireAuth,(_req,res)=>res.json({challenges: seasonalChallenges.filter(c=>seasonFor(now()).challengeIds.includes(c.id)).map(({id,title,mode,level})=>({id,title,mode,level,seasonal:true}))}));
 
   app.get('/api/me', (req, res) => res.json({ user: req.user ? publicUser(req.user) : null }));
   app.post('/api/auth/guest', (req, res) => {
@@ -336,19 +344,19 @@ export function createApp({
       completed: Boolean(get('SELECT 1 FROM daily_rewards WHERE user_id = ? AND date = ?', req.user.id, date)), bonusXp: 150 });
   });
   app.post('/api/attempts', requireAuth, (req, res) => {
-    const { challengeId, daily = false } = body(req, ['challengeId', 'daily']);
-    if (typeof challengeId !== 'string' || !challengeById.has(challengeId) || typeof daily !== 'boolean') {
+    const { challengeId, daily = false, seasonal = false } = body(req, ['challengeId', 'daily', 'seasonal']);
+    if (typeof challengeId !== 'string' || !playableById.has(challengeId) || typeof daily !== 'boolean' || typeof seasonal !== 'boolean' || (daily && seasonal)) {
       throw fail(400, 'Choose a valid challenge and daily flag.');
     }
     const time = now();
-    const challenge = challengeById.get(challengeId);
-    if (daily ? dailyChallenge(time).id !== challengeId : !unlocked(challenge, completedIds(req.user.id))) {
+    const challenge = playableById.get(challengeId);
+    if (seasonal ? !seasonFor(time).challengeIds.includes(challengeId) : !challengeById.has(challengeId) || (daily ? dailyChallenge(time).id !== challengeId : !unlocked(challenge, completedIds(req.user.id)))) {
       throw fail(403, daily ? 'This is not today’s daily challenge.' : 'Complete the previous levels in this mode first.');
     }
     const pending = get('SELECT * FROM attempts WHERE user_id = ? AND submitted_at IS NULL AND expires_at > ? ORDER BY started_at DESC LIMIT 1',
       req.user.id, time);
     if (pending) {
-      if (pending.challenge_id === challengeId && pending.daily_date === (daily ? dayKey(time) : null)) {
+      if (pending.challenge_id === challengeId && pending.daily_date === (daily ? dayKey(time) : null) && (!seasonal || rewards.seasonOf(pending.id) === seasonFor(time).id)) {
         return res.json(attemptResponse(pending));
       }
       throw fail(409, 'Finish your active challenge or wait for its timer to expire.');
@@ -356,8 +364,11 @@ export function createApp({
     limit(`start:${req.user.id}`, 30, 60 * 60_000);
     const attempt = { id: randomUUID(), user_id: req.user.id, challenge_id: challengeId,
       daily_date: daily ? dayKey(time) : null, started_at: time, expires_at: time + challenge.durationSeconds * 1000 };
-    run('INSERT INTO attempts (id, user_id, challenge_id, daily_date, started_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-      attempt.id, attempt.user_id, attempt.challenge_id, attempt.daily_date, attempt.started_at, attempt.expires_at);
+    transaction(() => {
+      run('INSERT INTO attempts (id, user_id, challenge_id, daily_date, started_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+        attempt.id, attempt.user_id, attempt.challenge_id, attempt.daily_date, attempt.started_at, attempt.expires_at);
+      if (seasonal) rewards.markAttempt(attempt.id, seasonFor(time).id);
+    });
     res.status(201).json(attemptResponse(attempt));
   });
   app.post('/api/attempts/:id/submit', requireAuth, (req, res) => {
@@ -368,7 +379,7 @@ export function createApp({
     const result = transaction(() => {
       const attempt = get('SELECT * FROM attempts WHERE id = ? AND user_id = ?', req.params.id, req.user.id);
       if (!attempt) throw fail(404, 'Attempt not found.');
-      const challenge = challengeById.get(attempt.challenge_id);
+      const challenge = playableById.get(attempt.challenge_id);
       if (answers.some((answer) => !challenge.options.some((option) => option.id === answer))) throw fail(400, 'Unknown answer option.');
       if (attempt.result) return JSON.parse(attempt.result);
       const expired = time >= attempt.expires_at;
@@ -385,7 +396,8 @@ export function createApp({
         const today = dayKey(time);
         const streak = user.last_active === today ? user.streak : user.last_active === dayKey(time - DAY) ? user.streak + 1 : 1;
         run('UPDATE users SET streak = ?, last_active = ? WHERE id = ?', streak, today, user.id);
-        const firstClear = run('INSERT OR IGNORE INTO completions VALUES (?, ?, ?)', user.id, challenge.id, time).changes > 0;
+        const firstClear = challengeById.has(challenge.id) && run('INSERT OR IGNORE INTO completions VALUES (?, ?, ?)', user.id, challenge.id, time).changes > 0;
+        rewards.complete(user.id,attempt.id,challenge.id);
         if (firstClear) xpEarned = 100 + challenge.level * 15 + Math.floor(50 * (1 - duration / challenge.durationSeconds)) + Math.min(streak - 1, 7) * 5;
         if (attempt.daily_date === today) {
           bonus = run('INSERT OR IGNORE INTO daily_rewards VALUES (?, ?)', user.id, today).changes > 0;
@@ -405,12 +417,20 @@ export function createApp({
           ['speed-demon', firstClear && duration < 30],
           ['perfectionist', firstClear && previousAttempts === 0],
           ['seven-day-warrior', streak >= 7],
-          ['quest-complete', completed.length === 20],
+          ['quest-complete', completed.filter(id=>id.startsWith('bugs-')||id.startsWith('tests-')).length === 20],
+          ['regression-master', completed.filter(id=>id.startsWith('regression-')).length === 15],
+          ['documentation-detective', completed.filter(id=>id.startsWith('documentation-')).length === 10],
+          ['performance-patrol', completed.filter(id=>id.startsWith('performance-')).length === 10],
+          ['all-domains', completed.length === challenges.length],
         ];
         for (const [id, earned] of awards) if (earned) run('INSERT OR IGNORE INTO achievements VALUES (?, ?, ?)', user.id, id, time);
       }
-      const rewardExplanation = !correct ? '' : xpEarned === 0 ? ' Practice clear: no repeat-clear XP is awarded.'
-        : bonus ? ' Includes the once-per-UTC-day +150 daily bonus.' : ' First-clear XP awarded.';
+      const season = rewards.seasonOf(attempt.id);
+      const rewardExplanation = !correct ? '' : season
+        ? season === seasonFor(time).id ? ' Season progress saved. Claim eligible credits on the Season & cosmetics page.'
+          : ' The season ended before submission; no season progress was awarded.'
+        : xpEarned === 0 ? ' Practice clear: no repeat-clear XP is awarded.'
+          : bonus ? ' Includes the once-per-UTC-day +150 daily bonus.' : ' First-clear XP awarded.';
       const rolloverExplanation = correct && attempt.daily_date && attempt.daily_date !== dayKey(time)
         ? ' The daily date changed before submission, so no daily bonus was awarded.' : '';
       const result = { correct, accuracy, xpEarned,

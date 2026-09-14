@@ -113,3 +113,21 @@ test('GitHub Pages demo mode returns a friendly error when Web Crypto is unavail
     /guest demo or a newer browser/,
   )
 })
+
+test('demo season rewards and cosmetics persist without affecting lifetime XP', async()=>{
+ const storage=memoryStorage();let time=Date.parse('2026-01-05T12:00:00Z');
+ const demo=createDemoApi({storage,now:()=>time});await demo.api('/auth/guest',{});
+ const {seasonalChallenges}=await import('../seasonContent.js');
+ const q=(await demo.api('/seasons/challenges')).challenges[0];
+ await assert.rejects(demo.api('/attempts',{challengeId:q.id}),/previous/);
+ const attempt=await demo.api('/attempts',{challengeId:q.id,seasonal:true});time+=1000;
+ const result=await demo.api(`/attempts/${attempt.attemptId}/submit`,{answers:seasonalChallenges.find(c=>c.id===q.id).answers});
+ assert.equal(result.xpEarned,0);assert.equal(result.state.completed.length,0);
+ let r=await demo.api('/rewards');assert.equal(r.season.progress,1);
+ await demo.api('/seasons/claim',{season:r.season.id,tier:1});await demo.api('/seasons/claim',{season:r.season.id,tier:1});
+ const regular=await demo.api('/attempts',{challengeId:'bugs-1'});time+=1000;
+ await demo.api(`/attempts/${regular.attemptId}/submit`,{answers:challengeById.get('bugs-1').answers});
+ await demo.api('/cosmetics/buy',{id:'ocean'});await demo.api('/cosmetics/equip',{id:'ocean'});
+ r=await createDemoApi({storage,now:()=>time}).api('/rewards');assert.equal(r.balance,25);assert.equal(r.equipped,'ocean');
+ time=Date.parse('2026-02-01');assert.equal((await demo.api('/rewards')).season.progress,0);
+});

@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:10.000
+Read the target. Target: p95 latency below 500 ms. Measure under the specified workload.
+
+00:00:10.000 --> 00:00:20.000
+Compare the right metric. Mean is 120 ms, but p95 is 900 ms. The tail-latency target fails.
+
+00:00:20.000 --> 00:00:30.000
+Investigate before concluding. Measure queue time, CPU, and memory. The latency alone does not prove a cause.

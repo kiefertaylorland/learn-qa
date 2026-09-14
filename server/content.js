@@ -1,3 +1,5 @@
+import { regression, documentation, performance } from './extendedContent.js';
+
 // Educational snippets are display-only. They are never executed.
 const bugs = [
   {
@@ -178,6 +180,9 @@ const tests = [
 export const challenges = [
   ...bugs.map((challenge, index) => makeChallenge(challenge, 'bugs', index)),
   ...tests.map((challenge, index) => makeChallenge(challenge, 'tests', index)),
+  ...regression.map((challenge, index) => makeChallenge(challenge, 'regression', index)),
+  ...documentation.map((challenge, index) => makeChallenge(challenge, 'documentation', index)),
+  ...performance.map((challenge, index) => makeChallenge(challenge, 'performance', index)),
 ];
 
 function makeChallenge(challenge, mode, index) {
@@ -203,4 +208,8 @@ export const achievementDefinitions = [
   { id: 'perfectionist', name: 'Perfectionist', description: 'Clear a challenge on your first submitted attempt.' },
   { id: 'seven-day-warrior', name: '7-Day Warrior', description: 'Complete challenges on seven consecutive UTC days.' },
   { id: 'quest-complete', name: 'Quest Complete', description: 'Complete all twenty challenges.' },
+  { id: 'regression-master', name: 'Regression Master', description: 'Complete all fifteen Regression Roulette challenges.' },
+  { id: 'documentation-detective', name: 'Documentation Detective', description: 'Complete all ten Documentation Detective challenges.' },
+  { id: 'performance-patrol', name: 'Performance Patrol', description: 'Complete all ten Performance Patrol challenges.' },
+  { id: 'all-domains', name: 'All Domains Champion', description: 'Complete all fifty-five challenges across five domains.' },
 ];

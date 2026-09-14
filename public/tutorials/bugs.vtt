@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:10.000
+Read the contract. A discount starts at 50 points. The boundary is inclusive.
+
+00:00:10.000 --> 00:00:20.000
+Probe the boundary. Test 49, 50, and 51. Only 49 should miss the discount.
+
+00:00:20.000 --> 00:00:30.000
+Report the difference. If 50 fails, record expected vs actual. Add the boundary case to regression tests.

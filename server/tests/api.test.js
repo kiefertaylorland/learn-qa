@@ -59,10 +59,10 @@ async function fixture(t, options = {}) {
   return { ...api, clock, base, client };
 }
 
-test('content has exactly ten distinct, meaningful challenges per mode', () => {
-  assert.equal(challenges.length, 20);
-  assert.equal(new Set(challenges.map((challenge) => challenge.title)).size, 20);
-  assert.equal(new Set(challenges.map((challenge) => challenge.prompt)).size, 20);
+test('original modes retain ten distinct meaningful levels', () => {
+  assert.equal(challenges.length, 55);
+  assert.equal(new Set(challenges.map((challenge) => challenge.title)).size, 55);
+  assert.equal(new Set(challenges.map((challenge) => challenge.prompt)).size, 55);
   for (const mode of ['bugs', 'tests']) {
     const items = challenges.filter((challenge) => challenge.mode === mode);
     assert.deepEqual(items.map((challenge) => challenge.level), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -85,7 +85,7 @@ test('authentication is required and challenge catalogs never expose grading key
   assert.deepEqual((await player.request('/api/leaderboard')).data.entries, []);
   await player.guest();
   const catalog = await player.request('/api/challenges');
-  assert.equal(catalog.data.challenges.length, 20);
+  assert.equal(catalog.data.challenges.length, 55);
   assert.deepEqual(catalog.data.challenges.filter((item) => item.unlocked).map((item) => item.id), ['bugs-1', 'tests-1']);
   assert.ok(!/answers|explanation|prompt|options/i.test(JSON.stringify(catalog.data)));
   const attempt = await player.start('bugs-1');
@@ -302,12 +302,13 @@ test('all twenty levels unlock independently and achievements reflect real compl
   assert.equal(result.state.stats.attempts, 20);
   assert.equal(result.state.stats.accuracy, 100);
   assert.equal(result.state.profile.level, Math.floor(result.state.profile.xp / 500) + 1);
-  assert.deepEqual(result.state.modeProgress, { bugs: { completed: 10, total: 10 }, tests: { completed: 10, total: 10 } });
+  assert.deepEqual(result.state.modeProgress.bugs, { completed: 10, total: 10 });
+  assert.deepEqual(result.state.modeProgress.tests, { completed: 10, total: 10 });
   for (const id of ['first-clear', 'bug-spotter', 'test-master', 'perfectionist', 'speed-demon', 'quest-complete']) {
     assert.equal(result.state.achievements.find((award) => award.id === id).earned, true);
   }
   catalog = (await player.request('/api/challenges')).data.challenges;
-  assert.ok(catalog.every((item) => item.completed && item.unlocked));
+  assert.ok(catalog.filter(item=>['bugs','tests'].includes(item.mode)).every((item) => item.completed && item.unlocked));
 });
 
 test('daily rotation is global, permits locked challenges, and awards a bonus once per UTC day', async (t) => {

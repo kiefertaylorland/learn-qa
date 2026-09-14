@@ -1,20 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, isDemoMode, subscribeToLeaderboard } from 'virtual:qa-api'
 import './App.css'
+import { modes as MODES, totalChallenges } from '../shared/progression.js'
+import { SkillTree, Rewards, Community, ShareAchievements, Metrics, TutorialExercise } from './Roadmap.jsx'
+import { InstallApp, VideoLibrary } from './Mobile.jsx'
 
 const EMPTY = {
   profile: { name: 'Explorer', level: 1, xp: 0, streak: 0 },
   completed: [], achievements: [],
   stats: { attempts: 0, completed: 0, accuracy: 0, weeklyXp: 0 },
-  modeProgress: { bugs: { completed: 0, total: 10 }, tests: { completed: 0, total: 10 } },
-}
-const MODES = {
-  bugs: { name: 'Bug Hunting', label: 'Find it. Flag it. Fix your instincts.', icon: 'bug', color: 'green',
-    description: 'Put your detective skills to work. Find the bugs hiding in everyday code.',
-    lesson: 'A bug is a difference between expected and actual behavior. Read the requirement first, then trace the code. Check boundaries, not just the happy path. Select every real issue — a working behavior is not a bug.' },
-  tests: { name: 'Test Case Arena', label: 'Think outside the happy path.', icon: 'code', color: 'purple',
-    description: 'Turn requirements into confidence. Build coverage that catches what others miss.',
-    lesson: 'A useful test case has preconditions, steps, and an expected result. Start with a successful journey, then add invalid inputs and boundary values. Draft your test below, then select the cases that provide the required coverage.' },
+  modeProgress: Object.fromEntries(Object.entries(MODES).map(([id,m])=>[id,{completed:0,total:m.total}])),
 }
 const TERMS = [
   ['Acceptance criteria', 'Specific, testable conditions that a feature must satisfy to be accepted.'],
@@ -123,6 +118,7 @@ function Leaderboard({ entries, category, compact = false }) {
 }
 
 export default function App() {
+  const [theme,setTheme] = useState('default')
   const [user, setUser] = useState(null)
   const [state, setState] = useState(EMPTY)
   const [challenges, setChallenges] = useState([])
@@ -148,6 +144,7 @@ export default function App() {
 
   const refresh = useCallback(async (currentUser) => {
     const [nextState, catalog, nextDaily] = await Promise.all([api('/state'), api('/challenges'), api('/daily')])
+    const rewards = await api('/rewards'); setTheme(rewards.equipped)
     setState(nextState); setChallenges(catalog.challenges); setDaily(nextDaily)
     writeLocal(`qa-progress-${currentUser.id}`, nextState)
   }, [])
@@ -173,7 +170,7 @@ export default function App() {
     return () => { disposed = true }
   }, [refresh])
   useEffect(() => {
-    refreshBoard()
+    Promise.resolve().then(refreshBoard)
     return subscribeToLeaderboard(refreshBoard)
   }, [refreshBoard])
   useEffect(() => {
@@ -216,7 +213,7 @@ export default function App() {
     }
     setBusy(true); setError('')
     try {
-      const attempt = await api('/attempts', { challengeId: challenge.id, daily: isDaily })
+      const attempt = await api('/attempts', { challengeId: challenge.id, daily: isDaily, seasonal: !!challenge.seasonal })
       setAnswers([]); setDraft(''); setResult(null); setActive(attempt); setPage('challenges'); setModal(null)
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
@@ -236,29 +233,27 @@ export default function App() {
   const profile = state.profile
   const levelXp = profile.xp % 500
   const earned = state.achievements.filter((badge) => badge.earned)
-  const nextBug = challenges.find((challenge) => challenge.mode === 'bugs' && challenge.unlocked && !challenge.completed)
-  const nextTest = challenges.find((challenge) => challenge.mode === 'tests' && challenge.unlocked && !challenge.completed)
-  const headings = { dashboard: 'Your next level starts here.', challenges: 'Small challenges. Real skills.', leaderboard: 'A little friendly competition.', achievements: 'Milestones worth celebrating.', learn: 'Build your QA toolkit.' }
+  const headings = { dashboard: 'Your next level starts here.', challenges: 'Small challenges. Real skills.', leaderboard: 'A little friendly competition.', achievements: 'Milestones worth celebrating.', learn: 'Build your QA toolkit.', path:'Choose your learning path.', rewards:'Make progress. Make it yours.', community:'Learn and compete together.' }
 
   function modeCard(mode) {
     const info = MODES[mode]
-    const progress = state.modeProgress[mode]
+    const progress = state.modeProgress[mode] || {completed:0,total:info.total}
     return <button className={`mode-card ${info.color}`} onClick={() => explore(mode)} disabled={busy || initializing}>
-      <div className="mode-card-top"><span className={`mode-icon ${info.color}`}><Icon name={info.icon} size={25} /></span><span className="pill">10 LEVELS</span><Icon name="arrow" /></div>
+      <div className="mode-card-top"><span className={`mode-icon ${info.color}`}><Icon name={info.icon} size={25} /></span><span className="pill">{info.total} LEVELS</span><Icon name="arrow" /></div>
       <h3>{info.name}</h3><p>{info.description}</p>
       <div className="mode-progress"><span>{progress.completed} / {progress.total} completed</span><strong>{Math.round(progress.completed / progress.total * 100)}%</strong></div>
       <div className="progress-track"><span style={{ width: `${progress.completed / progress.total * 100}%` }} /></div>
-      <div className="mode-bottom"><span><i />{mode === 'bugs' ? 'FUNCTIONAL TESTING' : 'TEST DESIGN'}</span><span>1–3 min <Icon name="clock" size={13} /></span></div>
+      <div className="mode-bottom"><span><i />{{bugs:'FUNCTIONAL TESTING',tests:'TEST DESIGN',regression:'RELEASE CONFIDENCE',documentation:'REQUIREMENTS',performance:'PERFORMANCE'}[mode]}</span><span>1–3 min <Icon name="clock" size={13} /></span></div>
     </button>
   }
 
-  return <div className="app-shell">
+  return <div className="app-shell" data-theme={theme}>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className={`sidebar ${mobileNav ? 'open' : ''}`} aria-label="Main navigation">
       <a href="#dashboard" className="brand" onClick={(event) => { event.preventDefault(); navigate('dashboard') }}><span className="brand-mark"><Icon name="code" size={23} /></span>qa<span>quest</span><span className="brand-dot">.</span></a>
       <div className="workspace-label">YOUR ADVENTURE</div>
-      <nav>{[['dashboard', 'grid', 'Overview'], ['challenges', 'code', 'Challenges'], ['learn', 'book', 'Learning hub'], ['leaderboard', 'trophy', 'Leaderboard'], ['achievements', 'badge', 'Achievements']].map(([id, icon, label]) =>
-        <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => id === 'challenges' && !user ? explore() : navigate(id)} disabled={busy || initializing}><Icon name={icon} />{label}{id === 'challenges' && <span className="nav-count">20</span>}</button>)}</nav>
+      <nav>{[['dashboard', 'grid', 'Overview'], ['challenges', 'code', 'Challenges'], ['learn', 'book', 'Learning hub'], ['leaderboard', 'trophy', 'Leaderboard'], ['achievements', 'badge', 'Achievements'], ['path','target','Skill paths'], ['rewards','spark','Season & cosmetics'], ['community','user','Community']].map(([id, icon, label]) =>
+        <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => id === 'challenges' && !user ? explore() : navigate(id)} disabled={busy || initializing}><Icon name={icon} />{label}{id === 'challenges' && <span className="nav-count">{totalChallenges}</span>}</button>)}</nav>
       <div className="sidebar-bottom">
         <div className="sidebar-tip"><span className="tiny-label"><Icon name="spark" size={15} /> A LITTLE BETTER, EVERY DAY</span><p>Great QA engineers aren’t born.<br />They’re built, one bug at a time.</p><button onClick={() => { setQuery(''); setModal('glossary') }}>Explore the glossary <Icon name="arrow" size={15} /></button></div>
         <div className="sidebar-profile"><span className="avatar">{profile.name.slice(0, 2).toUpperCase()}</span><div><strong>{profile.name}</strong><span>{user ? profile.isGuest ? 'Guest explorer' : 'QA adventurer' : 'Your adventure awaits'}</span></div><button className="icon-button" aria-label={user ? 'Account settings' : 'Sign in'} onClick={() => setModal(user && !profile.isGuest ? 'account' : 'auth')}><Icon name="user" size={18} /></button></div>
@@ -277,14 +272,14 @@ export default function App() {
           <button className="text-button back-button" onClick={() => navigate('challenges')}>← Back to challenges</button>
           <div className="section-heading"><div><span className="eyebrow">{MODES[active.challenge.mode].name} / LEVEL {active.challenge.level}</span><h1>{active.challenge.title}</h1></div>{!result && <Countdown key={active.attemptId} expiresAt={active.expiresAt} onExpire={submit} />}</div>
           <div className="play-layout">
-            <article className="panel scenario"><div className="panel-label"><Icon name="code" size={17} /> THE SCENARIO</div><h2>Your mission</h2><p>{active.challenge.prompt}</p>{active.challenge.code && <pre><code>{active.challenge.code}</code></pre>}<div className="learning-note"><Icon name="book" /><p>{active.challenge.mode === 'bugs' ? 'Compare the code with the requirement. What happens at the boundaries?' : 'Think about valid inputs, invalid inputs, and values at the boundary.'}</p></div>
-              {active.challenge.mode === 'tests' && <label className="test-draft">Draft a test case <span className="muted">(practice notes, not scored or saved)</span><textarea value={draft} maxLength={3000} onChange={(event) => setDraft(event.target.value)} placeholder={'Preconditions:\nSteps:\nExpected result:'} rows={6} /></label>}
+            <article className="panel scenario"><div className="panel-label"><Icon name="code" size={17} /> THE SCENARIO</div><h2>Your mission</h2><p>{active.challenge.prompt}</p><Metrics metrics={active.challenge.metrics}/>{active.challenge.code && <pre><code>{active.challenge.code}</code></pre>}<div className="learning-note"><Icon name="book" /><p>{MODES[active.challenge.mode].lesson}</p></div>
+              {['tests','documentation'].includes(active.challenge.mode) && <label className="test-draft">Draft a test case <span className="muted">(practice notes, not scored or saved)</span><textarea value={draft} maxLength={3000} onChange={(event) => setDraft(event.target.value)} placeholder={'Preconditions:\nSteps:\nExpected result:'} rows={6} /></label>}
             </article>
-            <article className="panel answer-panel"><div className="panel-label"><Icon name="target" size={17} /> {active.challenge.mode === 'bugs' ? 'SPOT THE ISSUES' : 'BUILD YOUR COVERAGE'}</div><h2>{result ? 'Let’s break it down' : 'What would you flag?'}</h2><p className="muted">Select all that apply. Accuracy includes avoiding false positives.</p>
+            <article className="panel answer-panel"><div className="panel-label"><Icon name="target" size={17} /> {active.challenge.mode === 'tests' ? 'BUILD YOUR COVERAGE' : 'FOLLOW THE EVIDENCE'}</div><h2>{result ? 'Let’s break it down' : 'What would you flag?'}</h2><p className="muted">Select all that apply. Accuracy includes avoiding false positives.</p>
               <fieldset disabled={!!result || busy}><legend className="sr-only">Choose your answers</legend>{active.challenge.options.map((option, index) => <label key={option.id} className={`answer-option ${answers.includes(option.id) ? 'chosen' : ''} ${result && result.correctAnswers.includes(option.id) ? 'correct-answer' : ''} ${result && answers.includes(option.id) && !result.correctAnswers.includes(option.id) ? 'incorrect-answer' : ''}`}>
                 <input type="checkbox" checked={answers.includes(option.id)} onChange={() => setAnswers((previous) => previous.includes(option.id) ? previous.filter((id) => id !== option.id) : [...previous, option.id])} /><span className="option-letter">{String.fromCharCode(65 + index)}</span><span>{option.text}{result && result.correctAnswers.includes(option.id) && <small>✓ Expected answer</small>}{result && answers.includes(option.id) && !result.correctAnswers.includes(option.id) && <small>✕ Not an issue / unnecessary coverage</small>}</span>
               </label>)}</fieldset>
-              {!result ? <button className="button primary wide" disabled={busy || answers.length === 0} onClick={submit}>{busy ? 'Checking your work…' : 'Submit answer'}<Icon name="arrow" size={18} /></button> : <div className="result" role="status"><span className={`result-heading ${result.correct ? 'success' : ''}`}><Icon name={result.correct ? 'check' : 'book'} />{result.correct ? 'Nicely done, explorer!' : 'Every attempt is a chance to learn.'}</span><div className="result-numbers"><strong>{result.accuracy}% accuracy</strong><strong>+{result.xpEarned} XP</strong></div><p>{result.explanation}</p>{result.correct && result.xpEarned === 0 && <p className="muted">Already mastered! Replays are for practice; each first clear earns XP.</p>}<button className="button primary wide" onClick={() => navigate('challenges')}>Continue your journey<Icon name="arrow" /></button></div>}
+              {!result ? <button className="button primary wide" disabled={busy || answers.length === 0} onClick={submit}>{busy ? 'Checking your work…' : 'Submit answer'}<Icon name="arrow" size={18} /></button> : <div className="result" role="status"><span className={`result-heading ${result.correct ? 'success' : ''}`}><Icon name={result.correct ? 'check' : 'book'} />{result.correct ? 'Nicely done, explorer!' : 'Every attempt is a chance to learn.'}</span><div className="result-numbers"><strong>{result.accuracy}% accuracy</strong><strong>+{result.xpEarned} XP</strong></div><p>{result.explanation}</p>{result.correct && result.xpEarned === 0 && !active.challenge.id.startsWith('season-') && <p className="muted">Already mastered! Replays are for practice; each first clear earns XP.</p>}<button className="button primary wide" onClick={() => navigate('challenges')}>Continue your journey<Icon name="arrow" /></button></div>}
             </article>
           </div>
         </section> : <>
@@ -297,10 +292,10 @@ export default function App() {
               <section className="level-card panel"><div className="panel-label">YOUR PROGRESS <Icon name="spark" size={17} /></div><div className="level-emblem"><Icon name="badge" size={37} /><span>{profile.level}</span></div><h3>{profile.level <= 5 ? 'QA Apprentice' : profile.level <= 15 ? 'Bug Investigator' : profile.level <= 30 ? 'Quality Champion' : 'QA Expert'}</h3><p>Level {profile.level} <span>·</span> Keep the curiosity going</p><div className="xp-line"><strong>{levelXp} <span>/ 500 XP</span></strong><span>Level {profile.level + 1}</span></div><div className="progress-track"><span style={{ width: `${levelXp / 5}%` }} /></div><p className="level-next">{500 - levelXp} XP to your next level</p></section>
             </div>
             <section className="stats-grid" aria-label="Your statistics">
-              {[['bolt', 'Total experience', profile.xp.toLocaleString(), 'XP', 'green'], ['target', 'Answer accuracy', Math.round(state.stats.accuracy), '%', 'purple'], ['check', 'Challenges cleared', state.completed.length, '/ 20', 'blue'], ['flame', 'Current streak', profile.streak, profile.streak === 1 ? 'day' : 'days', 'orange']].map(([icon, title, value, suffix, color]) => <div className="stat-card" key={title}><span className={`stat-icon ${color}`}><Icon name={icon} size={21} /></span><div><span className="stat-title">{title}</span><div className="stat-value">{value}<span>{suffix}</span></div></div></div>)}
+              {[['bolt', 'Total experience', profile.xp.toLocaleString(), 'XP', 'green'], ['target', 'Answer accuracy', Math.round(state.stats.accuracy), '%', 'purple'], ['check', 'Challenges cleared', state.completed.length, `/ ${totalChallenges}`, 'blue'], ['flame', 'Current streak', profile.streak, profile.streak === 1 ? 'day' : 'days', 'orange']].map(([icon, title, value, suffix, color]) => <div className="stat-card" key={title}><span className={`stat-icon ${color}`}><Icon name={icon} size={21} /></span><div><span className="stat-title">{title}</span><div className="stat-value">{value}<span>{suffix}</span></div></div></div>)}
             </section>
             <div className="lower-grid">
-              <div><section><div className="section-heading"><div><h2>Choose your challenge</h2><p>Two ways to build a quality-first mindset.</p></div><button className="text-button" onClick={() => explore()}>View all <Icon name="arrow" size={16} /></button></div><div className="mode-grid">{modeCard('bugs')}{modeCard('tests')}</div></section>
+              <div><section><div className="section-heading"><div><h2>Choose your challenge</h2><p>Five ways to build a quality-first mindset.</p></div><button className="text-button" onClick={() => explore()}>View all <Icon name="arrow" size={16} /></button></div><div className="mode-grid">{Object.keys(MODES).map(id=><div key={id}>{modeCard(id)}</div>)}</div></section>
                 <section className="daily-card"><span className="daily-icon"><Icon name="bolt" size={25} /></span><div><span className="daily-eyebrow">THE DAILY QUEST <span>+{daily?.bonusXp || 150} BONUS XP</span></span><h3>{daily?.title || 'A fresh challenge. A fresh perspective.'}</h3><p>{daily?.completed ? 'Daily quest complete. Come back tomorrow for a new challenge!' : 'One challenge. All explorers. A new opportunity every day.'}</p></div><button className="button secondary" disabled={busy || initializing || daily?.completed} onClick={() => daily ? start({ id: daily.challengeId, mode: daily.mode }, true) : explore()}>{daily?.completed ? 'Completed ✓' : 'Take the quest'}{!daily?.completed && <Icon name="arrow" size={16} />}</button></section>
                 <section className="next-up"><Icon name="book" size={20} /><p><strong>Curiosity is your best testing tool.</strong> Not sure what a term means? Your <button onClick={() => { setQuery(''); setModal('glossary') }}>QA glossary</button> is always one click away.</p></section>
               </div>
@@ -309,9 +304,9 @@ export default function App() {
           </>}
 
           {page === 'challenges' && <>
-            <div className="challenge-toolbar"><div className="segmented">{[['all', 'All challenges'], ['bugs', 'Bug Hunting'], ['tests', 'Test Case Arena']].map(([id, title]) => <button key={id} className={filter === id ? 'selected' : ''} onClick={() => setFilter(id)}>{title}</button>)}</div><span className="muted">{state.completed.length} of 20 mastered</span></div>
+            <div className="challenge-toolbar"><div className="segmented">{[['all', 'All challenges'], ...Object.entries(MODES).map(([id,m])=>[id,m.name])].map(([id, title]) => <button key={id} className={filter === id ? 'selected' : ''} onClick={() => setFilter(id)}>{title}</button>)}</div><span className="muted">{state.completed.length} of {totalChallenges} mastered</span></div>
             <div className="learning-note"><Icon name="spark" /><p>Clear each level to unlock the next in that mode. First clears earn XP; replays sharpen your skills. Daily quests can introduce any level.</p></div>
-            {!user ? <div className="empty-state panel"><h2>Ready to put your instincts to the test?</h2><p>Start as a guest, or create an account to keep your progress across devices.</p><button className="button primary" onClick={() => explore(filter)} disabled={busy}>Let’s get started<Icon name="arrow" /></button></div> : <div className="challenge-grid">{challenges.filter((challenge) => filter === 'all' || challenge.mode === filter).map((challenge) => <article key={challenge.id} className={`panel challenge-card ${!challenge.unlocked ? 'locked' : ''}`}><div className="mode-card-top"><span className={`mode-icon ${MODES[challenge.mode].color}`}><Icon name={MODES[challenge.mode].icon} /></span><span className="pill">LEVEL {String(challenge.level).padStart(2, '0')}</span>{challenge.completed ? <Icon name="check" /> : !challenge.unlocked ? <Icon name="lock" /> : null}</div><span className="tiny-label">{MODES[challenge.mode].name}</span><h2>{challenge.title}</h2><p>{challenge.description}</p><div className="challenge-meta"><span>{challenge.difficulty}</span><span><Icon name="clock" size={14} />{Math.ceil(challenge.durationSeconds / 60)} min</span></div><button className={`button ${challenge.unlocked ? 'secondary' : 'muted-button'} wide`} disabled={!challenge.unlocked || busy} onClick={() => start(challenge)}>{challenge.completed ? 'Practice again' : challenge.unlocked ? 'Start challenge' : `Clear level ${challenge.level - 1} to unlock`}<Icon name={challenge.unlocked ? 'arrow' : 'lock'} size={16} /></button></article>)}</div>}
+            {!user ? <div className="empty-state panel"><h2>Ready to put your instincts to the test?</h2><p>Start as a guest, or create an account to keep your progress across devices.</p><button className="button primary" onClick={() => explore(filter)} disabled={busy}>Let’s get started<Icon name="arrow" /></button></div> : <div className="challenge-grid">{challenges.filter((challenge) => filter === 'all' || challenge.mode === filter).map((challenge) => <article key={challenge.id} className={`panel challenge-card ${!challenge.unlocked ? 'locked' : ''}`}><div className="mode-card-top"><span className={`mode-icon ${MODES[challenge.mode].color}`}><Icon name={MODES[challenge.mode].icon} /></span><span className="pill">LEVEL {String(challenge.level).padStart(2, '0')}</span>{challenge.completed ? <Icon name="check" /> : !challenge.unlocked ? <Icon name="lock" /> : null}</div><span className="tiny-label">{MODES[challenge.mode].name}</span><h2>{challenge.title}</h2><p>{challenge.description}</p><div className="challenge-meta"><span>{challenge.difficulty}</span><span><Icon name="clock" size={14} />{Math.ceil(challenge.durationSeconds / 60)} min</span></div><button className={`button ${challenge.unlocked ? 'secondary' : 'muted-button'} wide`} disabled={!challenge.unlocked || busy} onClick={() => start(challenge)}>{challenge.completed ? 'Practice again' : challenge.unlocked ? 'Start challenge' : challenge.level===1?`Requires ${MODES[challenge.mode].prerequisite}`:`Clear level ${challenge.level - 1} to unlock`}<Icon name={challenge.unlocked ? 'arrow' : 'lock'} size={16} /></button></article>)}</div>}
           </>}
           {page === 'leaderboard' && <section className="panel full-board">
             <div className="leader-controls">
@@ -323,15 +318,18 @@ export default function App() {
             <Leaderboard entries={board.entries} category={category} />
             <p className="fine-print">Week of {board.week || 'this Monday'} · Live updates with automatic refresh. Speed measures successful attempts only.</p>
           </section>}
-          {page === 'achievements' && <><div className="achievement-summary"><Icon name="badge" size={26} /><strong>{earned.length}</strong><span>achievements earned — a record of your growing skills.</span></div><div className="achievement-grid">{(state.achievements.length ? state.achievements : [{ id: 'preview-1', name: 'Bug Spotter', description: 'Clear your first Bug Hunting challenge.' }, { id: 'preview-2', name: 'Test Master', description: 'Master the Test Case Arena.' }, { id: 'preview-3', name: 'Speed Demon', description: 'Clear a challenge in under 30 seconds.' }, { id: 'preview-4', name: 'Perfectionist', description: 'Complete a challenge with 100% accuracy.' }]).map((badge) => <article className={`panel achievement-card ${badge.earned ? 'earned' : ''}`} key={badge.id}><span className="achievement-icon"><Icon name="badge" size={38} /></span><span className="pill">{badge.earned ? '✓ UNLOCKED' : 'IN PROGRESS'}</span><h2>{badge.name}</h2><p>{badge.description}</p></article>)}</div></>}
-          {page === 'learn' && <><div className="mode-grid tutorial-cards">{Object.entries(MODES).map(([id, mode]) => <article className="panel" key={id}><span className={`mode-icon ${mode.color}`}><Icon name={mode.icon} size={26} /></span><h2>{mode.name} fundamentals</h2><p>{mode.lesson}</p><button className="button secondary" onClick={() => user ? start((id === 'bugs' ? nextBug : nextTest) || challenges.find((challenge) => challenge.mode === id)) : explore(id)}>Put it into practice<Icon name="arrow" size={17} /></button></article>)}</div><div className="section-heading glossary-heading"><div><h2>The QA field guide</h2><p>Foundational concepts aligned with common ISTQB terminology.</p></div><a className="text-button" href="https://glossary.istqb.org/" target="_blank" rel="noreferrer">ISTQB glossary ↗</a></div><div className="glossary-grid">{TERMS.map(([term, definition]) => <article className="panel glossary-card" key={term}><h3>{term}</h3><p>{definition}</p></article>)}</div></>}
+          {page === 'path' && <SkillTree state={state} challenges={challenges} onStart={start} onExplore={explore}/>}
+          {page === 'rewards' && <Rewards user={user} onStart={start} onEquip={setTheme}/>}
+          {page === 'community' && <Community user={user} state={state}/>}
+          {page === 'achievements' && <><ShareAchievements state={state}/><div className="achievement-summary"><Icon name="badge" size={26} /><strong>{earned.length}</strong><span>achievements earned — a record of your growing skills.</span></div><div className="achievement-grid">{(state.achievements.length ? state.achievements : [{ id: 'preview-1', name: 'Bug Spotter', description: 'Clear your first Bug Hunting challenge.' }, { id: 'preview-2', name: 'Test Master', description: 'Master the Test Case Arena.' }, { id: 'preview-3', name: 'Speed Demon', description: 'Clear a challenge in under 30 seconds.' }, { id: 'preview-4', name: 'Perfectionist', description: 'Complete a challenge with 100% accuracy.' }]).map((badge) => <article className={`panel achievement-card ${badge.earned ? 'earned' : ''}`} key={badge.id}><span className="achievement-icon"><Icon name="badge" size={38} /></span><span className="pill">{badge.earned ? '✓ UNLOCKED' : 'IN PROGRESS'}</span><h2>{badge.name}</h2><p>{badge.description}</p></article>)}</div></>}
+          {page === 'learn' && <><VideoLibrary/><div className="mode-grid tutorial-cards">{Object.entries(MODES).map(([id, mode]) => <article className="panel" key={id}><span className={`mode-icon ${mode.color}`}><Icon name={mode.icon} size={26} /></span><h2>{mode.name} fundamentals</h2><p>{mode.lesson}</p><button className="button secondary" onClick={() => user ? start(challenges.find(c=>c.mode===id&&c.unlocked&&!c.completed) || challenges.find(c=>c.mode===id&&c.unlocked) || challenges.find(c=>c.mode===id)) : explore(id)}>Put it into practice<Icon name="arrow" size={17} /></button></article>)}</div><div className="section-heading glossary-heading"><div><h2>The QA field guide</h2><p>Foundational concepts aligned with common ISTQB terminology.</p></div><a className="text-button" href="https://glossary.istqb.org/" target="_blank" rel="noreferrer">ISTQB glossary ↗</a></div><div className="glossary-grid">{TERMS.map(([term, definition]) => <article className="panel glossary-card" key={term}><h3>{term}</h3><p>{definition}</p></article>)}</div></>}
         </>}
-        <footer><span>Built for curious minds. Made for better software.</span><span>QA QUEST <span className="footer-dot">/</span> KEEP LEVELING UP <Icon name="spark" size={12} /></span></footer>
+        <InstallApp/><footer><span>Built for curious minds. Made for better software.</span><span>QA QUEST <span className="footer-dot">/</span> KEEP LEVELING UP <Icon name="spark" size={12} /></span></footer>
       </main>
     </div>
     {modal === 'auth' && <Auth onClose={() => setModal(null)} onSuccess={authSuccess} isGuest={profile.isGuest} />}
     {modal === 'account' && <Modal title="Your explorer profile" onClose={() => setModal(null)}><div className="account-info"><span className="avatar">{profile.name.slice(0, 2).toUpperCase()}</span><div><h3>{profile.name}</h3><p>Level {profile.level} · {profile.xp} XP · {state.completed.length} challenges cleared</p></div></div><p className="muted">Your progress is saved to your account and synced when you return. Sign in on another device to pick up where you left off.</p><button className="button secondary wide" disabled={busy} onClick={async () => { setModal(null); await logout() }}><Icon name="logout" size={18} />Sign out</button></Modal>}
     {modal === 'glossary' && <Modal title="Your QA glossary" onClose={() => setModal(null)}><label className="glossary-search"><Icon name="search" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a concept…" aria-label="Search glossary" /></label><div className="glossary-list">{TERMS.filter((entry) => entry.join(' ').toLowerCase().includes(query.toLowerCase())).map(([term, definition]) => <section key={term}><h3>{term}</h3><p>{definition}</p></section>)}{!TERMS.some((entry) => entry.join(' ').toLowerCase().includes(query.toLowerCase())) && <p>No matching terms. Try “boundary” or “test”.</p>}</div></Modal>}
-    {modal?.type === 'tutorial' && <Modal title={`Quick start: ${MODES[modal.challenge.mode].name}`} onClose={() => setModal(null)}><span className={`mode-icon ${MODES[modal.challenge.mode].color}`}><Icon name={MODES[modal.challenge.mode].icon} size={30} /></span><p className="tutorial-lesson">{MODES[modal.challenge.mode].lesson}</p><div className="tutorial-example"><strong>A shop offers free delivery on orders of $50 or more.</strong><p>Which set best checks the boundary?</p><button className={`answer-option ${tutorialReady ? 'correct-answer' : ''}`} onClick={() => setTutorialReady(true)}>$49, $50, and $51</button><button className="answer-option" onClick={() => setTutorialReady(false)}>$100, $200, and $300</button><p role="status">{tutorialReady ? 'Exactly! Check just below, at, and just above the threshold.' : 'Tip: large valid values miss the place where the behavior changes.'}</p></div><p className="fine-print">The timer starts when you begin. Select every correct answer. XP rewards first clears, speed, and daily consistency.</p><button className="button primary wide" disabled={!tutorialReady || busy} onClick={() => { writeLocal(`qa-tutorial-${user.id}-${modal.challenge.mode}`, true); start(modal.challenge, modal.isDaily, true) }}>I’m ready. Let’s go!<Icon name="arrow" /></button></Modal>}
+    {modal?.type === 'tutorial' && <Modal title={`Quick start: ${MODES[modal.challenge.mode].name}`} onClose={() => setModal(null)}><span className={`mode-icon ${MODES[modal.challenge.mode].color}`}><Icon name={MODES[modal.challenge.mode].icon} size={30} /></span><p className="tutorial-lesson">{MODES[modal.challenge.mode].lesson}</p><TutorialExercise mode={modal.challenge.mode} ready={tutorialReady} onReady={setTutorialReady}/><p className="fine-print">The timer starts when you begin. Select every correct answer. XP rewards first clears, speed, and daily consistency.</p><button className="button primary wide" disabled={!tutorialReady || busy} onClick={() => { writeLocal(`qa-tutorial-${user.id}-${modal.challenge.mode}`, true); start(modal.challenge, modal.isDaily, true) }}>I’m ready. Let’s go!<Icon name="arrow" /></button></Modal>}
   </div>
 }

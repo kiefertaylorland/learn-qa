@@ -1,5 +1,8 @@
+import { modes, isUnlocked, emptyRewards, rewardView, buyCosmetic, equipCosmetic, claimTier, seasonFor } from '../shared/progression.js'
+import { seasonalChallenges } from '../server/seasonContent.js'
 import { achievementDefinitions, challengeById, challenges } from '../server/content.js'
 
+const playableById = new Map([...challengeById, ...seasonalChallenges.map(c=>[c.id,c])])
 const DAY = 86_400_000
 const BONUS_XP = 150
 const STORE_KEY = 'qa-quest-demo-store'
@@ -12,11 +15,7 @@ const fallbackStorage = {
 }
 
 const ranges = { all: [1, Infinity], '1-5': [1, 5], '6-15': [6, 15], '16-30': [16, 30], '31+': [31, Infinity] }
-const modeTotals = Object.fromEntries(['bugs', 'tests'].map((mode) => [mode, challenges.filter((challenge) => challenge.mode === mode).length]))
-const challengeAnswers = new Map(challenges.map((challenge) => {
-  if (!Array.isArray(challenge.answers) || challenge.answers.length === 0) throw new Error(`Challenge ${challenge.id} is missing demo answers.`)
-  return [challenge.id, challenge.answers]
-}))
+const modeTotals = Object.fromEntries(Object.keys(modes).map((mode) => [mode, challenges.filter((challenge) => challenge.mode === mode).length]))
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -60,6 +59,7 @@ function assertPassword(password) {
 
 function defaultStore() {
   return {
+    rewards: {},
     users: [],
     sessionUserId: null,
     attempts: [],
@@ -79,9 +79,6 @@ function challengeSummary(challenge) {
   return { id, mode, title, level, difficulty, durationSeconds, description }
 }
 
-function correctAnswersFor(challengeId) {
-  return challengeAnswers.get(challengeId)
-}
 
 export function createDemoApi(options = {}) {
   const storage = options.storage ?? globalThis.localStorage ?? fallbackStorage
@@ -99,6 +96,7 @@ export function createDemoApi(options = {}) {
       if (!raw) return defaultStore()
       const parsed = JSON.parse(raw)
       return {
+        rewards: parsed.rewards || {},
         users: Array.isArray(parsed.users) ? parsed.users : [],
         sessionUserId: typeof parsed.sessionUserId === 'string' ? parsed.sessionUserId : null,
         attempts: Array.isArray(parsed.attempts) ? parsed.attempts : [],
@@ -128,9 +126,7 @@ export function createDemoApi(options = {}) {
   }
 
   function unlocked(challenge, completed) {
-    return challenges
-      .filter((item) => item.mode === challenge.mode && item.level < challenge.level)
-      .every((item) => completed.includes(item.id))
+    return isUnlocked(challenge, completed)
   }
 
   function state(store, userId, time = now()) {
@@ -170,11 +166,11 @@ export function createDemoApi(options = {}) {
   }
 
   function attemptResponse(attempt) {
-    const item = challengeById.get(attempt.challengeId)
-    const { id, mode, title, level, prompt, code, options, durationSeconds } = item
+    const item = playableById.get(attempt.challengeId)
+    const { id, mode, title, level, prompt, code, metrics, options, durationSeconds } = item
     return {
       attemptId: attempt.id,
-      challenge: { id, mode, title, level, prompt, ...(code ? { code } : {}), options: clone(options), durationSeconds },
+      challenge: { id, mode, title, level, prompt, ...(code ? { code } : {}), ...(metrics ? {metrics} : {}), options: clone(options), durationSeconds },
       startedAt: iso(attempt.startedAt),
       expiresAt: iso(attempt.expiresAt),
     }
@@ -339,6 +335,16 @@ export function createDemoApi(options = {}) {
       saveStore(store)
       return {}
     }
+    if (['/rewards','/cosmetics/buy','/cosmetics/equip','/seasons/claim'].includes(path)) {
+      const user=requireUser(store)
+      const records=store.rewards[user.id] ||= emptyRewards()
+      if(path==='/cosmetics/buy') buyCosmetic(records,completedIds(store,user.id),body?.id,now())
+      if(path==='/cosmetics/equip') equipCosmetic(records,body?.id)
+      if(path==='/seasons/claim') claimTier(records,body?.season,body?.tier,now())
+      saveStore(store)
+      return rewardView(records,completedIds(store,user.id),now())
+    }
+    if(path==='/seasons/challenges') {requireUser(store);return {challenges:seasonalChallenges.filter(c=>seasonFor(now()).challengeIds.includes(c.id)).map(({id,title,mode,level})=>({id,title,mode,level,seasonal:true}))}}
     if (path === '/state') return state(store, requireUser(store).id)
     if (path === '/challenges') {
       const user = requireUser(store)
@@ -367,15 +373,15 @@ export function createDemoApi(options = {}) {
     }
     if (path === '/attempts') {
       const user = requireUser(store)
-      const { challengeId, daily = false } = body ?? {}
-      if (typeof challengeId !== 'string' || !challengeById.has(challengeId) || typeof daily !== 'boolean') {
+      const { challengeId, daily = false, seasonal = false } = body ?? {}
+      if (typeof challengeId !== 'string' || !playableById.has(challengeId) || typeof daily !== 'boolean' || typeof seasonal !== 'boolean' || (daily && seasonal)) {
         const error = new Error('Choose a valid challenge and daily flag.')
         error.status = 400
         throw error
       }
       const time = now()
-      const challenge = challengeById.get(challengeId)
-      if (daily ? dailyChallenge(time).id !== challengeId : !unlocked(challenge, completedIds(store, user.id))) {
+      const challenge = playableById.get(challengeId)
+      if (seasonal ? !seasonFor(time).challengeIds.includes(challengeId) : !challengeById.has(challengeId) || (daily ? dailyChallenge(time).id !== challengeId : !unlocked(challenge, completedIds(store, user.id)))) {
         const error = new Error(daily ? 'This is not today’s daily challenge.' : 'Complete the previous levels in this mode first.')
         error.status = 403
         throw error
@@ -384,7 +390,7 @@ export function createDemoApi(options = {}) {
         .filter((entry) => entry.userId === user.id && !entry.submittedAt && entry.expiresAt > time)
         .sort((a, b) => b.startedAt - a.startedAt)[0]
       if (pending) {
-        if (pending.challengeId === challengeId && pending.dailyDate === (daily ? dayKey(time) : null)) return attemptResponse(pending)
+        if (pending.challengeId === challengeId && pending.dailyDate === (daily ? dayKey(time) : null) && (!seasonal || pending.season === seasonFor(time).id)) return attemptResponse(pending)
         const error = new Error('Finish your active challenge or wait for its timer to expire.')
         error.status = 409
         throw error
@@ -394,6 +400,7 @@ export function createDemoApi(options = {}) {
         userId: user.id,
         challengeId,
         dailyDate: daily ? dayKey(time) : null,
+        season: seasonal ? seasonFor(time).id : null,
         startedAt: time,
         expiresAt: time + challenge.durationSeconds * 1000,
         submittedAt: null,
@@ -422,7 +429,7 @@ export function createDemoApi(options = {}) {
         error.status = 404
         throw error
       }
-      const challenge = challengeById.get(attempt.challengeId)
+      const challenge = playableById.get(attempt.challengeId)
       if (answers.some((answer) => !challenge.options.some((option) => option.id === answer))) {
         const error = new Error('Unknown answer option.')
         error.status = 400
@@ -432,7 +439,7 @@ export function createDemoApi(options = {}) {
 
       const time = now()
       const expired = time >= attempt.expiresAt
-      const correctAnswers = correctAnswersFor(challenge.id)
+      const correctAnswers = challenge.answers
       const correct = !expired && answers.length === correctAnswers.length && answers.every((answer) => correctAnswers.includes(answer))
       const intersection = answers.filter((answer) => correctAnswers.includes(answer)).length
       const accuracy = expired ? 0 : Math.round(100 * intersection / new Set([...answers, ...correctAnswers]).size)
@@ -452,7 +459,11 @@ export function createDemoApi(options = {}) {
         user.streak = streak
         user.lastActive = today
 
-        const firstClear = !store.completions.some((entry) => entry.userId === user.id && entry.challengeId === challenge.id)
+        const firstClear = challengeById.has(challenge.id) && !store.completions.some((entry) => entry.userId === user.id && entry.challengeId === challenge.id)
+        if(attempt.season && attempt.season === seasonFor(time).id) {
+          const records=store.rewards[user.id] ||= emptyRewards()
+          if(!records.seasonal.some(r=>r.season===attempt.season&&r.challengeId===challenge.id)) records.seasonal.push({season:attempt.season,challengeId:challenge.id})
+        }
         if (firstClear) store.completions.push({ userId: user.id, challengeId: challenge.id, completedAt: time })
         if (firstClear) xpEarned = 100 + challenge.level * 15 + Math.floor(50 * (1 - duration / challenge.durationSeconds)) + Math.min(streak - 1, 7) * 5
         if (attempt.dailyDate === today && !store.dailyRewards.some((entry) => entry.userId === user.id && entry.date === today)) {
@@ -474,7 +485,11 @@ export function createDemoApi(options = {}) {
           ['speed-demon', firstClear && duration < 30],
           ['perfectionist', firstClear && previousAttempts === 0],
           ['seven-day-warrior', streak >= 7],
-          ['quest-complete', completed.length === 20],
+          ['quest-complete', completed.filter(id=>id.startsWith('bugs-')||id.startsWith('tests-')).length === 20],
+          ['regression-master', completed.filter(id=>id.startsWith('regression-')).length === 15],
+          ['documentation-detective', completed.filter(id=>id.startsWith('documentation-')).length === 10],
+          ['performance-patrol', completed.filter(id=>id.startsWith('performance-')).length === 10],
+          ['all-domains', completed.length === challenges.length],
         ]
         for (const [achievementId, earned] of awards) {
           if (earned && !store.achievements.some((entry) => entry.userId === user.id && entry.achievementId === achievementId)) {
@@ -483,8 +498,11 @@ export function createDemoApi(options = {}) {
         }
       }
 
-      const rewardExplanation = !correct ? '' : xpEarned === 0 ? ' Practice clear: no repeat-clear XP is awarded.'
-        : bonus ? ' Includes the once-per-UTC-day +150 daily bonus.' : ' First-clear XP awarded.'
+      const rewardExplanation = !correct ? '' : attempt.season
+        ? attempt.season === seasonFor(time).id ? ' Season progress saved. Claim eligible credits on the Season & cosmetics page.'
+          : ' The season ended before submission; no season progress was awarded.'
+        : xpEarned === 0 ? ' Practice clear: no repeat-clear XP is awarded.'
+          : bonus ? ' Includes the once-per-UTC-day +150 daily bonus.' : ' First-clear XP awarded.'
       const missedRolloverBonus = correct && attempt.dailyDate && attempt.dailyDate !== dayKey(time)
         && !store.dailyRewards.some((entry) => entry.userId === user.id && entry.date === attempt.dailyDate)
       const rolloverExplanation = missedRolloverBonus ? ' The daily date changed before submission, so no daily bonus was awarded.' : ''
