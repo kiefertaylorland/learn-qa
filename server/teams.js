@@ -106,6 +106,7 @@ export function mountTeams(ctx) {
   );
   app.post('/api/teams/:id/invite', requireAuth, (req, res) => {
     body(req, []);
+    limit(`team-invite:${req.user.id}`, 30, 3600000);
     authorize(req.params.id, req.user.id, true);
     run(
       'UPDATE teams SET invite_code=?,invite_expires=? WHERE id=?',
