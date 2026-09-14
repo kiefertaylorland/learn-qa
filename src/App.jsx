@@ -201,8 +201,8 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', sync)
   }, [user, active, refresh])
 
-  function navigate(next) {
-    if (active && !result && !window.confirm('Leave this challenge? The timer will keep running, and no XP will be awarded.')) return
+  function navigate(next, force = false) {
+    if (!force && active && !result && !window.confirm('Leave this challenge? The timer will keep running, and no XP will be awarded.')) return
     setActive(null); setResult(null); setPage(next); setMobileNav(false); setError('')
   }
   async function authSuccess(data) {
@@ -218,7 +218,7 @@ export default function App() {
   }
   async function logout() {
     setBusy(true)
-    try { await api('/auth/logout', {}); setUser(null); setState(EMPTY); setChallenges([]); setDaily(null); setActive(null); setResult(null); setPage('dashboard'); setMobileNav(false); setError(''); refreshBoard() } catch (err) { setError(err.message) } finally { setBusy(false) }
+    try { await api('/auth/logout', {}); setUser(null); setState(EMPTY); setChallenges([]); setDaily(null); navigate('dashboard', true); refreshBoard() } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   async function start(challenge, isDaily = false, skipTutorial = false) {
     if (!user) { setModal('auth'); return }
