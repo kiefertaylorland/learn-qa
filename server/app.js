@@ -81,7 +81,7 @@ export function createApp({
   const db = new DatabaseSync(databasePath);
   initialize(db);
   const app = express();
-  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+  app.set('trust proxy', 'loopback');
   const server = createServer(app);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
   const cookieName = production ? '__Host-qa_session' : 'qa_session';
