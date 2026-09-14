@@ -455,9 +455,12 @@ export function createApp({
   if (production) {
     app.use(express.static(distDir, { index: false, dotfiles: 'deny' }));
     app.get('/{*path}', (req, res, next) => {
-      if (path.extname(req.path) || req.path.split('/').some((segment) => segment.startsWith('.'))) return next(fail(404, 'File not found.'));
-      res.set('Cache-Control', 'no-cache');
-      res.sendFile(path.join(distDir, 'index.html'), (error) => { if (error) next(error); });
+      try {
+        limit(`app:${clientAddress(req)}`, 120, 60_000);
+        if (path.extname(req.path) || req.path.split('/').some((segment) => segment.startsWith('.'))) return next(fail(404, 'File not found.'));
+        res.set('Cache-Control', 'no-cache');
+        res.sendFile(path.join(distDir, 'index.html'), (error) => { if (error) next(error); });
+      } catch (error) { next(error); }
     });
   }
   app.use((_req, _res, next) => next(fail(404, 'Not found.')));
