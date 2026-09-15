@@ -29,16 +29,56 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Must run before the build: it resolves the base path the build needs,
+      # and it asserts Pages is in "workflow" build mode. In "legacy" mode Pages
+      # publishes the repo root verbatim and silently ignores this artifact,
+      # which serves unbuilt source and renders a blank page.
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Verify Pages uses workflow builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '.build_type')"
+          if [ "$build_type" != "workflow" ]; then
+            echo "::error::Pages build type is '$build_type'; expected 'workflow'."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
+      # configure-pages emits base_path without a trailing slash ("/learn-qa"),
+      # but Vite requires one. Normalize, and fall back to "/" for a user site.
+      - name: Resolve Pages base path
+        env:
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          base="${PAGES_BASE_PATH:-/}"
+          base="/${base#/}"
+          base="${base%/}/"
+          echo "Building with base: $base"
+          echo "PAGES_BASE=$base" >> "$GITHUB_ENV"
+
       - name: Build GitHub Pages demo
         env:
-          GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
+          GITHUB_PAGES_BASE: ${{ env.PAGES_BASE }}
         run: npm run build:pages
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      # Guards the exact failure this workflow shipped green for weeks: an
+      # index.html whose script tag points at unbuilt source, so nothing renders.
+      - name: Verify build output is base-prefixed
+        run: |
+          if ! grep -q "src=\"${PAGES_BASE}assets/" dist/index.html; then
+            echo "::error::dist/index.html is not base-prefixed with ${PAGES_BASE}; refusing to deploy an unrenderable site."
+            cat dist/index.html
+            exit 1
+          fi
+          echo "OK: assets are prefixed with ${PAGES_BASE}"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
