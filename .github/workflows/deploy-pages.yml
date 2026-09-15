@@ -39,6 +39,16 @@ jobs:
         with:
           enablement: true
 
+      - name: Verify Pages uses workflow builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '.build_type')"
+          if [ "$build_type" != "workflow" ]; then
+            echo "::error::Pages build type is '$build_type'; expected 'workflow'."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
