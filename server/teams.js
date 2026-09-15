@@ -143,11 +143,20 @@ export function mountTeams(ctx) {
             400,
             'Transfer ownership before leaving or removing the owner.',
           );
-        run(
-          'DELETE FROM team_members WHERE team_id=? AND user_id=?',
-          team.id,
-          target.id,
-        );
+        transaction(() => {
+          run(
+            'DELETE FROM team_members WHERE team_id=? AND user_id=?',
+            team.id,
+            target.id,
+          );
+          if (action === 'remove')
+            run(
+              'UPDATE teams SET invite_code=?,invite_expires=? WHERE id=?',
+              code(),
+              now() + 7 * 86400000,
+              team.id,
+            );
+        });
       }
       res.json({ ok: true });
     },

@@ -73,3 +73,49 @@ test('season tiers are unique, require progress and cannot claim previous month'
   assert.equal(rewardView(records, [], now).balance, 75);
   assert.throws(() => claimTier(records, '2026-01', 1, now), /active/);
 });
+
+test('past seasons preserve distinct unclaimed missions without carrying progress forward', () => {
+  const january = seasonFor(Date.parse('2026-01-01T00:00:00Z'));
+  const february = seasonFor(january.endsAt);
+  const records = {
+    purchased: [],
+    claims: [],
+    seasonal: january.challengeIds.slice(0, 2).map((challengeId) => ({
+      season: january.id,
+      challengeId,
+    })),
+    equipped: 'default',
+  };
+  records.seasonal.push({ ...records.seasonal[0] });
+  assert.deepEqual(rewardView(records, [], january.startsAt).pastSeasons, []);
+
+  let view = rewardView(records, [], february.startsAt);
+  const januaryHistory = {
+    id: january.id,
+    progress: 2,
+    completed: january.challengeIds.slice(0, 2),
+  };
+  assert.deepEqual(view.pastSeasons, [januaryHistory]);
+  assert.equal(view.season.progress, 0);
+  assert.deepEqual(view.season.completed, []);
+  assert.deepEqual(view.history, []);
+  assert.equal(view.balance, 0);
+  assert.throws(() => claimTier(records, january.id, 1, february.startsAt), /active/);
+  assert.throws(() => claimTier(records, february.id, 1, february.startsAt), /Complete/);
+
+  records.seasonal.push({
+    season: february.id,
+    challengeId: february.challengeIds[0],
+  });
+  claimTier(records, february.id, 1, february.startsAt);
+  view = rewardView(records, [], february.endsAt);
+  assert.deepEqual(view.pastSeasons, [
+    { id: february.id, progress: 1, completed: [february.challengeIds[0]] },
+    januaryHistory,
+  ]);
+  assert.deepEqual(view.history, [{ season: february.id, tier: 1 }]);
+  assert.equal(view.balance, 75);
+  assert.equal(view.season.progress, 0);
+  assert.ok(view.season.tiers.every((tier) => !tier.claimed));
+  assert.throws(() => claimTier(records, february.id, 1, february.endsAt), /active/);
+});

@@ -121,6 +121,13 @@ export function emptyRewards() {
 }
 export function rewardView(records, completed, time) {
   const season = seasonFor(time);
+  const pastSeasons = new Map();
+  for (const record of records.seasonal) {
+    if (record.season >= season.id) continue;
+    if (!pastSeasons.has(record.season))
+      pastSeasons.set(record.season, new Set());
+    pastSeasons.get(record.season).add(record.challengeId);
+  }
   const progress = new Set(
     records.seasonal
       .filter((r) => r.season === season.id)
@@ -155,6 +162,13 @@ export function rewardView(records, completed, time) {
         ),
       })),
     },
+    pastSeasons: [...pastSeasons]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([id, missions]) => ({
+        id,
+        progress: missions.size,
+        completed: [...missions],
+      })),
     history: records.claims,
   };
 }

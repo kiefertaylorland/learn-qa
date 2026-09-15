@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, isDemoMode } from 'virtual:qa-api';
 import { ShareAchievements } from './Sharing.jsx';
 import { Match } from './Match.jsx';
@@ -33,7 +33,10 @@ function Form({ title, fields, submitLabel = title, onSubmit, busy }) {
     </form>
   );
 }
-export function Community({ user, state }) {
+export function Community(props) {
+  return <AccountCommunity key={props.user?.id} {...props} />;
+}
+function AccountCommunity({ user, state }) {
   const [data, setData] = useState(null),
     [tab, setTab] = useState('friends'),
     [team, setTeam] = useState(null),
@@ -42,49 +45,74 @@ export function Community({ user, state }) {
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [selection, setSelection] = useState(null);
+  const generation = useRef(0),
+    refreshRequest = useRef(0);
+  useLayoutEffect(() => {
+    const current = generation.current;
+    return () => {
+      generation.current = current + 1;
+    };
+  }, []);
   const matchId = match?.id,
     teamId = team?.id;
   const selected =
     selection ?? (data ? JSON.parse(data.portfolio.achievements) : []);
   const refresh = useCallback(async () => {
-    const d = await api('/community');
+    const current = generation.current;
+    const request = ++refreshRequest.current;
+    const [d, leaderboard] = await Promise.all([
+      api('/community'),
+      api('/friends/leaderboard'),
+    ]);
+    if (current !== generation.current || request !== refreshRequest.current) return;
     setData(d);
-    setBoard((await api('/friends/leaderboard')).entries);
+    setBoard(leaderboard.entries);
   }, []);
   useEffect(() => {
+    let disposed = false;
     if (user && !isDemoMode)
-      Promise.resolve()
-        .then(refresh)
-        .catch((e) => setError(e.message));
+      refresh().catch((e) => {
+        if (!disposed) setError(e.message);
+      });
+    return () => { disposed = true; };
   }, [user, refresh]);
   useEffect(() => {
     if (!user || isDemoMode) return;
-    const timer = setInterval(() => {
-      if (matchId)
-        api(`/matches/${matchId}`)
-          .then((r) => setMatch({ ...r, receivedAt: Date.now() }))
-          .catch((e) => setError(e.message));
-      else if (teamId)
-        api(`/teams/${teamId}`)
-          .then(setTeam)
-          .catch((e) => setError(e.message));
-      else refresh().catch((e) => setError(e.message));
+    let disposed = false, request = 0;
+    const timer = setInterval(async () => {
+      const current = ++request;
+      try {
+        if (matchId || teamId) {
+          const r = await api(matchId ? `/matches/${matchId}` : `/teams/${teamId}`);
+          if (disposed || current !== request) return;
+          if (matchId) setMatch({ ...r, receivedAt: Date.now() });
+          else setTeam(r);
+        } else await refresh();
+      } catch (e) {
+        if (!disposed && current === request) setError(e.message);
+      }
     }, 3000);
-    return () => clearInterval(timer);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
   }, [user, matchId, teamId, refresh]);
   async function act(path, body, kind) {
+    const current = generation.current;
     setBusy(true);
     setError('');
     try {
       const r = await api(path, body);
+      if (current !== generation.current) return;
       if (kind === 'team') setTeam(r);
       if (kind === 'match') setMatch({ ...r, receivedAt: Date.now() });
       await refresh();
+      if (current !== generation.current) return;
       return r;
     } catch (e) {
-      setError(e.message);
+      if (current === generation.current) setError(e.message);
     } finally {
-      setBusy(false);
+      if (current === generation.current) setBusy(false);
     }
   }
   if (isDemoMode)
@@ -261,12 +289,11 @@ export function Community({ user, state }) {
                           className="text-button"
                           disabled={busy}
                           onClick={async () => {
-                            await act(`/teams/${team.id}/members`, {
+                            const removed = await act(`/teams/${team.id}/members`, {
                               action: 'remove',
                               code: m.code,
                             });
-                            const v = await act(`/teams/${team.id}`);
-                            if (v) setTeam(v);
+                            if (removed) await act(`/teams/${team.id}`, undefined, 'team');
                           }}
                         >
                           Remove
@@ -275,12 +302,11 @@ export function Community({ user, state }) {
                           className="text-button"
                           disabled={busy}
                           onClick={async () => {
-                            await act(`/teams/${team.id}/members`, {
+                            const transferred = await act(`/teams/${team.id}/members`, {
                               action: 'transfer',
                               code: m.code,
                             });
-                            const v = await act(`/teams/${team.id}`);
-                            if (v) setTeam(v);
+                            if (transferred) await act(`/teams/${team.id}`, undefined, 'team');
                           }}
                         >
                           Transfer ownership

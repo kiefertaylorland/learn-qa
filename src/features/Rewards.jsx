@@ -1,36 +1,48 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from 'virtual:qa-api';
-export function Rewards({ user, onStart, onEquip }) {
+export function Rewards(props) {
+  return <AccountRewards key={props.user?.id} {...props} />;
+}
+function AccountRewards({ user, onStart, onEquip }) {
   const [data, setData] = useState(null),
     [quests, setQuests] = useState([]),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  const refresh = useCallback(async () => {
-    const [r, q] = await Promise.all([
-      api('/rewards'),
-      api('/seasons/challenges'),
-    ]);
-    setData(r);
-    setQuests(q.challenges);
-    onEquip(r.equipped);
+  const generation = useRef(0);
+  useLayoutEffect(() => {
+    const current = generation.current;
+    onEquip('default');
+    return () => { generation.current = current + 1; };
   }, [onEquip]);
   useEffect(() => {
+    const current = generation.current;
+    let disposed = false;
     if (user)
-      Promise.resolve()
-        .then(refresh)
-        .catch((e) => setError(e.message));
-  }, [user, refresh]);
+      Promise.all([api('/rewards'), api('/seasons/challenges')])
+        .then(([r, q]) => {
+          if (disposed || current !== generation.current) return;
+          setData(r);
+          setQuests(q.challenges);
+          onEquip(r.equipped);
+        })
+        .catch((e) => {
+          if (!disposed && current === generation.current) setError(e.message);
+        });
+    return () => { disposed = true; };
+  }, [user, onEquip]);
   async function act(path, body) {
+    const current = generation.current;
     setBusy(true);
     setError('');
     try {
       const next = await api(path, body);
+      if (current !== generation.current) return;
       setData(next);
       onEquip(next.equipped);
     } catch (e) {
-      setError(e.message);
+      if (current === generation.current) setError(e.message);
     } finally {
-      setBusy(false);
+      if (current === generation.current) setBusy(false);
     }
   }
   if (!user)
@@ -93,6 +105,17 @@ export function Rewards({ user, onStart, onEquip }) {
             </button>
           ))}
         </div>
+        <details>
+          <summary>Past season progress ({data.pastSeasons.length})</summary>
+          {data.pastSeasons.map((season) => (
+            <section key={season.id}>
+              <h3>{season.id}: {season.progress} / 3 missions completed</h3>
+              <ul>
+                {season.completed.map((id) => <li key={id}>{id}</li>)}
+              </ul>
+            </section>
+          ))}
+        </details>
         <details>
           <summary>Past reward claims ({data.history.length})</summary>
           <ul>

@@ -54,12 +54,52 @@ test('season quests require current pool, persist rewards and do not farm XP', a
     'ocean',
   );
   f.clock.time = Date.parse('2026-02-01');
-  assert.equal((await a.request('/api/rewards')).data.season.progress, 0);
+  const rolled = (await a.request('/api/rewards')).data;
+  assert.equal(rolled.season.progress, 0);
+  assert.deepEqual(rolled.season.completed, []);
+  assert.ok(rolled.season.tiers.every((tier) => !tier.claimed));
+  assert.deepEqual(rolled.pastSeasons, [{
+    id: rewards.season.id,
+    progress: 1,
+    completed: [challenge.id],
+  }]);
+  assert.deepEqual(rolled.history, rewards.history);
   assert.equal(
     (await a.post('/api/seasons/claim', { season: rewards.season.id, tier: 1 }))
       .status,
     400,
   );
+});
+test('season rollover retains unclaimed mission progress without granting expired rewards', async (t) => {
+  const f = await fixture(t),
+    a = f.client();
+  await a.guest();
+  const season = (await a.request('/api/rewards')).data.season;
+  const completed = season.challengeIds.slice(0, 2);
+  for (const challengeId of completed) {
+    const attempt = (await a.post('/api/attempts', { challengeId, seasonal: true })).data;
+    f.clock.time += 1000;
+    const result = await a.post(`/api/attempts/${attempt.attemptId}/submit`, {
+      answers: seasonalChallenges.find((c) => c.id === challengeId).answers,
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.data.correct, true);
+  }
+  assert.deepEqual((await a.request('/api/rewards')).data.pastSeasons, []);
+  f.clock.time = season.endsAt;
+  const rewards = (await a.request('/api/rewards')).data;
+  assert.deepEqual(rewards.pastSeasons, [{ id: season.id, progress: 2, completed }]);
+  assert.equal(rewards.season.progress, 0);
+  assert.deepEqual(rewards.season.completed, []);
+  assert.ok(rewards.season.tiers.every((tier) => !tier.claimed));
+  assert.deepEqual(rewards.history, []);
+  assert.equal(rewards.balance, 0);
+  for (const seasonId of [season.id, rewards.season.id])
+    assert.equal(
+      (await a.post('/api/seasons/claim', { season: seasonId, tier: 1 })).status,
+      400,
+    );
+  assert.deepEqual((await a.request('/api/rewards')).data, rewards);
 });
 test('friends require consent, use public codes, and can be removed', async (t) => {
   const f = await fixture(t),
@@ -177,6 +217,41 @@ test('teams authorize membership and owners; tournament includes eligible result
     200,
   );
   assert.equal((await b.request(`/api/teams/${team.id}`)).status, 404);
+  assert.equal(
+    (await b.post('/api/teams/join', { code: team.inviteCode })).status,
+    404,
+  );
+  const updated = (await a.request(`/api/teams/${team.id}`)).data;
+  assert.notEqual(updated.inviteCode, team.inviteCode);
+  assert.equal(updated.inviteExpires, f.clock.time + 7 * 86400000);
+  assert.ok(updated.inviteExpires > team.inviteExpires);
+  const joined = await b.post('/api/teams/join', { code: updated.inviteCode });
+  assert.equal(joined.status, 200);
+  assert.equal(joined.data.inviteCode, undefined);
+});
+test('member removal rolls back when invitation rotation fails', async (t) => {
+  const f = await fixture(t),
+    owner = f.client(),
+    member = f.client();
+  await owner.guest();
+  await member.guest();
+  const team = (await owner.post('/api/teams', { name: 'Atomic team' })).data;
+  const joined = (await member.post('/api/teams/join', { code: team.inviteCode })).data;
+  const memberCode = joined.members.find((m) => m.isYou).code;
+  f.db.exec(
+    "CREATE TRIGGER reject_invite_rotation BEFORE UPDATE OF invite_code ON teams BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;",
+  );
+  assert.equal(
+    (await owner.post(`/api/teams/${team.id}/members`, {
+      action: 'remove',
+      code: memberCode,
+    })).status,
+    500,
+  );
+  assert.equal((await member.request(`/api/teams/${team.id}`)).status, 200);
+  const unchanged = (await owner.request(`/api/teams/${team.id}`)).data;
+  assert.equal(unchanged.inviteCode, team.inviteCode);
+  assert.equal(unchanged.inviteExpires, team.inviteExpires);
 });
 test('match lifecycle binds participants, delays answer disclosure and expires cleanly', async (t) => {
   const f = await fixture(t),
@@ -323,6 +398,13 @@ test('team invitations expire, rotate, and ownership can be transferred', async 
   assert.equal((await a.post(`/api/teams/${team.id}/invite`, {})).status, 403);
   assert.equal(
     (await a.post(`/api/teams/${team.id}/members`, { action: 'leave' })).status,
+    200,
+  );
+  const afterLeave = (await b.request(`/api/teams/${team.id}`)).data;
+  assert.equal(afterLeave.inviteCode, team.inviteCode);
+  assert.equal(afterLeave.inviteExpires, team.inviteExpires);
+  assert.equal(
+    (await a.post('/api/teams/join', { code: team.inviteCode })).status,
     200,
   );
   f.clock.time += 8 * 86400000;

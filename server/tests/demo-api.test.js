@@ -129,5 +129,43 @@ test('demo season rewards and cosmetics persist without affecting lifetime XP', 
  await demo.api(`/attempts/${regular.attemptId}/submit`,{answers:challengeById.get('bugs-1').answers});
  await demo.api('/cosmetics/buy',{id:'ocean'});await demo.api('/cosmetics/equip',{id:'ocean'});
  r=await createDemoApi({storage,now:()=>time}).api('/rewards');assert.equal(r.balance,25);assert.equal(r.equipped,'ocean');
- time=Date.parse('2026-02-01');assert.equal((await demo.api('/rewards')).season.progress,0);
+ time=Date.parse('2026-02-01');
+ const rolled=await createDemoApi({storage,now:()=>time}).api('/rewards');
+ assert.equal(rolled.season.progress,0);
+ assert.deepEqual(rolled.season.completed,[]);
+ assert.ok(rolled.season.tiers.every(tier=>!tier.claimed));
+ assert.deepEqual(rolled.pastSeasons,[{id:r.season.id,progress:1,completed:[q.id]}]);
+ assert.deepEqual(rolled.history,r.history);
+ await assert.rejects(demo.api('/seasons/claim',{season:r.season.id,tier:1}),/active/);
 });
+
+test('demo rollover preserves unclaimed missions across reload without granting expired rewards', async () => {
+ const storage = memoryStorage()
+ let time = Date.parse('2026-01-31T12:00:00Z')
+ const demo = createDemoApi({ storage, now: () => time })
+ await demo.api('/auth/guest', {})
+ const { seasonalChallenges } = await import('../seasonContent.js')
+ const { season } = await demo.api('/rewards')
+ const completed = season.challengeIds.slice(0, 2)
+ for (const challengeId of completed) {
+   const attempt = await demo.api('/attempts', { challengeId, seasonal: true })
+   time += 1000
+   const result = await demo.api(`/attempts/${attempt.attemptId}/submit`, {
+     answers: seasonalChallenges.find((c) => c.id === challengeId).answers,
+   })
+   assert.equal(result.correct, true)
+ }
+ assert.deepEqual((await demo.api('/rewards')).pastSeasons, [])
+ time = season.endsAt
+ const restored = createDemoApi({ storage, now: () => time })
+ const rewards = await restored.api('/rewards')
+ assert.deepEqual(rewards.pastSeasons, [{ id: season.id, progress: 2, completed }])
+ assert.equal(rewards.season.progress, 0)
+ assert.deepEqual(rewards.season.completed, [])
+ assert.ok(rewards.season.tiers.every((tier) => !tier.claimed))
+ assert.deepEqual(rewards.history, [])
+ assert.equal(rewards.balance, 0)
+ await assert.rejects(restored.api('/seasons/claim', { season: season.id, tier: 1 }), /active/)
+ await assert.rejects(restored.api('/seasons/claim', { season: rewards.season.id, tier: 1 }), /Complete/)
+ assert.deepEqual(await restored.api('/rewards'), rewards)
+})
