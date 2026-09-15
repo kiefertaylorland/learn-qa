@@ -119,10 +119,6 @@ export function mountTeams(ctx) {
   app.post(
     '/api/teams/:id/members',
     requireAuth,
-    (req, res, next) => {
-      limit(`team-members:${req.user.id}`, 30, 86400000);
-      next();
-    },
     (req, res) => {
       limit(`team-members:${req.user.id}`, 30, 86400000);
       const { action, code: targetCode } = body(req, ['action', 'code']);
