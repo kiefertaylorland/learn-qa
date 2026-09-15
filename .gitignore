@@ -26,3 +26,7 @@ data/
 *.njsproj
 *.sln
 *.sw?
+
+# GitHub Pages build output (legacy outDir)
+dist-pages
+.gstack/
